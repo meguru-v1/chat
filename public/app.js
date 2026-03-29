@@ -1,4 +1,10 @@
-const API_BASE = '/api';
+let API_BASE = '/api';
+
+// GitHub Pages等のリモート環境からローカルサーバーに接続するための設定
+if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+  API_BASE = 'http://localhost:3000/api';
+  console.log('GitHub Pages環境のため、APIサーバーを http://localhost:3000 に向けました');
+}
 
 // DOM Elements
 const form = document.getElementById('recordForm');
