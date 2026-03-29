@@ -32,7 +32,7 @@ function formatDate(dateStr) {
   });
 }
 
-function createSessionElement(session, isActive) {
+function createSessionElement(session, displayState) {
   const li = document.createElement('li');
   li.className = 'session-item';
 
@@ -40,10 +40,10 @@ function createSessionElement(session, isActive) {
   let metaHtml = '';
   let actionHtml = '';
 
-  if (isActive) {
+  if (displayState === 'recording') {
     badgeHtml = `<div class="badge recording"><i class="fas fa-circle"></i> RECORDING</div>`;
     metaHtml = `
-      <span title="開始時刻"><i class="far fa-clock"></i> ${formatDate(session.startTime)}</span>
+      <span title="開始時刻"><i class="far fa-clock"></i> ${formatDate(session.startedAt || session.startTime)}</span>
       <span title="取得コメント数"><i class="far fa-comment-dots"></i> ${session.messageCount || 0} msgs</span>
     `;
     actionHtml = `
@@ -51,7 +51,21 @@ function createSessionElement(session, isActive) {
         <i class="fas fa-stop"></i> 停止
       </button>
     `;
+  } else if (displayState === 'stopping') {
+    badgeHtml = `<div class="badge stopping"><i class="fas fa-spinner fa-spin"></i> STOPPING</div>`;
+    metaHtml = `
+      <span title="開始時刻"><i class="far fa-clock"></i> ${formatDate(session.startedAt || session.startTime)}</span>
+      <span title="取得コメント数"><i class="far fa-comment-dots"></i> ${session.messageCount || 0} msgs</span>
+    `;
+    actionHtml = ``;
+  } else if (displayState === 'error') {
+    badgeHtml = `<div class="badge error"><i class="fas fa-exclamation-triangle"></i> ERROR</div>`;
+    metaHtml = `
+      <span title="エラー原因" style="color:var(--danger-color)"><i class="fas fa-times-circle"></i> 録画失敗 (無効なIDかライブチャットが存在しません)</span>
+    `;
+    actionHtml = ``;
   } else {
+    // completed
     badgeHtml = `<div class="badge completed"><i class="fas fa-check"></i> COMPLETED</div>`;
     metaHtml = `
       <span title="開始〜終了"><i class="far fa-calendar"></i> ${formatDate(session.firstMessage)}</span>
@@ -91,11 +105,18 @@ async function loadStatus() {
     
     if (actData.sessions && actData.sessions.length > 0) {
       activeList.innerHTML = '';
-      actData.sessions.filter(s => s.status === 'recording').forEach(s => {
-        activeList.appendChild(createSessionElement(s, true));
+      actData.sessions.forEach(s => {
+        if (s.status === 'recording' || s.status === 'stopping') {
+          activeList.appendChild(createSessionElement(s, s.status));
+        } else if (s.status === 'finished' && (s.messageCount === 0 || s.finishReason === 'process_error')) {
+          activeList.appendChild(createSessionElement(s, 'error'));
+        }
       });
+      if (activeList.children.length === 0) {
+        activeList.innerHTML = '<div class="empty-state">現在アクティブなセッションはありません</div>';
+      }
     } else {
-      activeList.innerHTML = '<div class="empty-state">現在録画中のセッションはありません</div>';
+      activeList.innerHTML = '<div class="empty-state">現在アクティブなセッションはありません</div>';
     }
 
     // 履歴セッション
@@ -105,7 +126,7 @@ async function loadStatus() {
     if (histData.sessions && histData.sessions.length > 0) {
       historyList.innerHTML = '';
       histData.sessions.forEach(s => {
-        historyList.appendChild(createSessionElement(s, false));
+        historyList.appendChild(createSessionElement(s, 'completed'));
       });
     } else {
       historyList.innerHTML = '<div class="empty-state">保存されたセッションはありません</div>';
