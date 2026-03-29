@@ -8,6 +8,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
+import path from 'path';
 import {
   startRecording,
   stopRecording,
@@ -27,6 +28,7 @@ const MONGODB_URI =
 // ミドルウェア
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, '../public')));
 
 // ======== ヘルスチェック ========
 app.get('/health', (_req: Request, res: Response) => {

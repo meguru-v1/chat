@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Smart-Archiver</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  
+  <div class="container">
+    <header>
+      <h1><i class="fab fa-youtube" style="color: #ff0000; margin-right: 0.5rem;"></i> Smart-Archiver</h1>
+      <p class="subtitle">高度なYouTubeライブチャット記録・分析システム</p>
+    </header>
+
+    <!-- Start Recording Form -->
+    <section class="card">
+      <h2><i class="fas fa-video"></i> 録画を開始する</h2>
+      <form id="recordForm">
+        <div class="input-group">
+          <input type="text" id="videoIdInput" placeholder="YouTube Video ID (例: dQw4w9WgXcQ)" required autocomplete="off">
+          <button type="submit" id="submitBtn" class="btn-primary">
+            <i class="fas fa-play"></i> START
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Active Sessions -->
+    <section class="card">
+      <h2><i class="fas fa-satellite-dish"></i> 録画中のセッション</h2>
+      <ul id="activeSessionsList" class="session-list">
+        <li class="empty-state">読み込み中...</li>
+      </ul>
+    </section>
+
+    <!-- Completed Sessions -->
+    <section class="card">
+      <h2><i class="fas fa-archive"></i> 保存済みセッション</h2>
+      <ul id="historySessionsList" class="session-list">
+        <li class="empty-state">読み込み中...</li>
+      </ul>
+    </section>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
