@@ -1,0 +1,28 @@
+{
+  "name": "YouTube Chat Smart-Archiver",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "forwardPorts": [3000, 27017],
+  "postCreateCommand": "npm install && pip install chat-downloader && npm run download-font",
+  "postStartCommand": "docker run -d --name mongodb -p 27017:27017 mongo:7 && sleep 3 && echo '✅ MongoDB起動完了'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "mongodb.mongodb-vscode",
+        "humao.rest-client"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "portsAttributes": {
+    "3000": { "label": "Chat Archiver API", "onAutoForward": "notify" },
+    "27017": { "label": "MongoDB", "onAutoForward": "silent" }
+  }
+}

@@ -1,0 +1,37 @@
+### チャット録画開始
+POST http://localhost:3000/api/record/start
+Content-Type: application/json
+
+{
+  "videoId": "ここにVideo IDを入力"
+}
+
+###
+
+### 録画ステータス確認
+GET http://localhost:3000/api/record/status
+
+###
+
+### 録画停止
+POST http://localhost:3000/api/record/stop
+Content-Type: application/json
+
+{
+  "videoId": "ここにVideo IDを入力"
+}
+
+###
+
+### セッション一覧
+GET http://localhost:3000/api/sessions
+
+###
+
+### PDFレポートダウンロード
+GET http://localhost:3000/api/sessions/ここにVideo IDを入力/pdf
+
+###
+
+### ヘルスチェック
+GET http://localhost:3000/health
