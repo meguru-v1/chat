@@ -284,7 +284,8 @@ async function loadCloudStatus() {
       // sessionぽい形式に適当にマッピングする
       const s = {
         githubRunId: run.id,
-        videoId: run.name + ` (#${run.run_number})`, // 動画IDは直接見えないのでワークフロー名を代用
+        // display_title (run-name) があればそれを使い、なければ run_number を動画IDとして表示
+        videoId: run.display_title || (run.name + ` (#${run.run_number})`), 
         status: run.status,
         startedAt: run.created_at,
         finishedAt: run.updated_at,

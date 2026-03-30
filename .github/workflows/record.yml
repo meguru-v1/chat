@@ -48,8 +48,8 @@ jobs:
       - name: 🚀 APIサーバー起動
         run: |
           npx ts-node src/app.ts &
-          echo "⏳ サーバー起動を5秒間待機しています..."
-          sleep 5
+          echo "⏳ サーバー起動を15秒間待機しています..."
+          sleep 15
           echo "🔍 ヘルスチェック実行中..."
           curl -v http://localhost:3000/health || (echo "❌ サーバーが起動していません" && exit 1)
         env:
@@ -62,7 +62,7 @@ jobs:
           echo "🎬 録画開始リクエスト: ${{ inputs.video_id }}"
           RESPONSE=$(curl -v -X POST http://localhost:3000/api/record/start \
             -H "Content-Type: application/json" \
-            -d "{\"videoId\": \"${{ inputs.video_id }}\"}")
+            -d '{"videoId": "${{ inputs.video_id }}"}')
           echo "📄 サーバーレスポンス: $RESPONSE"
         env:
           MONGODB_URI: mongodb://localhost:27017/chat-archiver
