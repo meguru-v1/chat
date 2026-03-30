@@ -1,3 +1,4 @@
+console.log('🚀 Smart-Archiver v1.2 Initialized');
 let API_BASE = '/api';
 
 // GitHub Pages等のリモート環境からローカルサーバーに接続するための設定（ローカルモードの場合）
