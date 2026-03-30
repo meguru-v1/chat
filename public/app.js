@@ -139,9 +139,13 @@ function createSessionElement(session, displayState) {
     `;
     
     if (isCloud) {
+       // タイトル "📺 録画: VIDEO_ID (xxx分)" から VIDEO_ID を抽出
+       const match = session.videoId.match(/録画:\s*([a-zA-Z0-9_-]{11})/);
+       const vid = match ? match[1] : session.videoId;
+       
        actionHtml = `
-        <button class="btn-download" onclick="window.open('${session.htmlUrl}', '_blank')" title="GitHubからダウンロード">
-          <i class="fas fa-file-pdf"></i> アクション実行結果 (PDF)
+        <button class="btn-download" onclick="window.open('./reports/chat-report-${vid}.pdf', '_blank')" title="直接ダウンロード">
+          <i class="fas fa-file-pdf"></i> PDFを直接開く
         </button>
       `;
     } else {
