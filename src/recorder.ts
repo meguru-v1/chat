@@ -43,7 +43,7 @@ export function startRecording(
     : workerPath.replace(/\.ts$/, '.js');
 
   const worker = new Worker(actualWorkerPath, {
-    workerData: { videoId, mongoUri },
+    workerData: { videoId, mongoUri, apiKey: process.env.YOUTUBE_API_KEY },
     // ts-node 環境で .ts ファイルの Worker を動かすための設定
     execArgv: workerPath.endsWith('.ts')
       ? ['--require', 'ts-node/register']

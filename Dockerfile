@@ -11,14 +11,7 @@ RUN npx tsc
 # ---- Production Stage ----
 FROM node:20-slim
 
-# Python + chat-downloader のインストール
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 python3-pip python3-venv git && \
-    python3 -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir chat-downloader && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-ENV PATH="/opt/venv/bin:$PATH"
+# Python依存を削除（Node.jsベースの公式APIポーリング方式に変更したため）
 
 WORKDIR /app
 COPY package.json package-lock.json* ./

@@ -1,16 +1,15 @@
 /**
- * recorderWorker.ts — Worker Thread エントリポイント
+ * recorderWorker.ts — Worker Thread エントリポイント (公式API版)
  *
- * chat-downloader (Python CLI) を子プロセスとして起動し、
- * stdout の JSON 行をパースして MongoDB に保存する。
+ * YouTube Data API v3 を使用してライブチャットを定期的(ポーリング)に取得し、
+ * MongoDB に保存する。Python(chat-downloader)依存から脱却。
  *
  * ハイブリッド終了判定:
- *   A) chat-downloader プロセスが正常終了 → 配信終了
- *   B) 5分間 stdout 無出力 → タイムアウト → 子プロセス kill
- *   C) 親スレッドから 'stop' メッセージ → 子プロセス kill
+ *   A) YouTube APIが403/404(配信終了)を返す → 配信終了
+ *   B) 5分間新規チャットなし → タイムアウト終了
+ *   C) 親スレッドから 'stop' メッセージ → 強制終了
  */
 import { parentPort, workerData } from 'worker_threads';
-import { spawn, ChildProcess } from 'child_process';
 import mongoose from 'mongoose';
 import { ChatMessage } from '../models/ChatMessage';
 
@@ -21,19 +20,20 @@ const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5分
 interface WorkerInput {
   videoId: string;
   mongoUri: string;
+  apiKey?: string;
 }
 
-const { videoId, mongoUri } = workerData as WorkerInput;
+const { videoId, mongoUri, apiKey } = workerData as WorkerInput;
 const sessionId = videoId;
 
-let chatProcess: ChildProcess | null = null;
-let idleTimer: NodeJS.Timeout | null = null;
+let isStopping = false;
 let messageCount = 0;
+let idleTimer: NodeJS.Timeout | null = null;
+let pollTimeout: NodeJS.Timeout | null = null;
 
 /** 5分アイドルタイマーをリセット */
 function resetIdleTimer(): void {
   if (idleTimer) clearTimeout(idleTimer);
-
   idleTimer = setTimeout(() => {
     sendToParent('log', `⏰ 5分間新規チャットなし — タイムアウト停止`);
     cleanup('timeout');
@@ -41,32 +41,20 @@ function resetIdleTimer(): void {
 }
 
 /** 親スレッドへメッセージ送信 */
-function sendToParent(
-  type: string,
-  data: string | number | Record<string, unknown>
-): void {
+function sendToParent(type: string, data: any): void {
   parentPort?.postMessage({ type, data });
 }
 
 /** クリーンアップ & 終了 */
 async function cleanup(reason: string): Promise<void> {
-  if (idleTimer) {
-    clearTimeout(idleTimer);
-    idleTimer = null;
-  }
+  if (isStopping) return;
+  isStopping = true;
 
-  if (chatProcess && !chatProcess.killed) {
-    chatProcess.kill('SIGTERM');
-    chatProcess = null;
-  }
+  if (idleTimer) clearTimeout(idleTimer);
+  if (pollTimeout) clearTimeout(pollTimeout);
 
-  sendToParent('finished', {
-    reason,
-    sessionId,
-    messageCount,
-  });
+  sendToParent('finished', { reason, sessionId, messageCount });
 
-  // MongoDB 接続を閉じてワーカーを終了
   try {
     await mongoose.disconnect();
   } catch {
@@ -76,95 +64,122 @@ async function cleanup(reason: string): Promise<void> {
   process.exit(0);
 }
 
-/** メイン処理 */
+// ==========================================
+// YouTube Data API 関連機能
+// ==========================================
+
+/** 1. 対象ビデオの liveChatId を取得する */
+async function getActiveLiveChatId(vid: string, key: string): Promise<string> {
+  const url = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${vid}&key=${key}`;
+  const res = await fetch(url);
+  
+  if (!res.ok) {
+    const errObj = (await res.json().catch(() => ({}))) as any;
+    throw new Error(`APIエラー: ${res.status} ${errObj.error?.message || ''}`);
+  }
+
+  const data = (await res.json()) as any;
+  if (!data.items || data.items.length === 0) {
+    throw new Error('動画が存在しないか、非公開です');
+  }
+
+  const details = data.items[0].liveStreamingDetails;
+  if (!details || !details.activeLiveChatId) {
+    throw new Error('この動画には有効なライブチャットが存在しません');
+  }
+
+  return details.activeLiveChatId;
+}
+
+/** 2. チャットをループ取得 (ポーリング) */
+async function pollChat(liveChatId: string, key: string, pageToken?: string) {
+  if (isStopping) return;
+
+  let url = `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${liveChatId}&part=snippet,authorDetails&maxResults=2000&key=${key}`;
+  if (pageToken) url += `&pageToken=${pageToken}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      if (res.status === 403 || res.status === 404) {
+        // 配信終了やアーカイブ化に伴いチャットが閉じられた
+        sendToParent('log', `🛑 ライブチャットが終了しました (status: ${res.status})`);
+        return cleanup('stream_ended');
+      }
+      const errObj = (await res.json().catch(() => ({}))) as any;
+      throw new Error(`Chat API通信エラー: ${res.status} ${errObj.error?.message || ''}`);
+    }
+
+    const data = (await res.json()) as any;
+
+    // 取得したメッセージをパースして保存
+    if (data.items && data.items.length > 0) {
+      const messagesToSave = data.items.map((item: any) => ({
+        sessionId,
+        timestamp: new Date(item.snippet.publishedAt),
+        authorName: item.authorDetails.displayName || '不明',
+        message: item.snippet.displayMessage || ''
+      })).filter((m: any) => m.message);
+
+      if (messagesToSave.length > 0) {
+        for (const m of messagesToSave) {
+          await ChatMessage.create(m).catch(() => {});
+        }
+
+        messageCount += messagesToSave.length;
+        resetIdleTimer();
+
+        // ある程度の単位で進捗を親に送る
+        sendToParent('progress', { messageCount });
+      }
+    }
+
+    const nextToken = data.nextPageToken;
+    // APIが要求する待機時間 (短すぎるとBANされるため必ず守る)
+    const interval = data.pollingIntervalMillis || 5000;
+
+    if (isStopping) return;
+
+    pollTimeout = setTimeout(() => {
+      pollChat(liveChatId, key, nextToken);
+    }, interval);
+
+  } catch (err: any) {
+    sendToParent('log', `⚠️ チャット取得警告: ${err.message}`);
+    // 一時的なネットワークエラーの可能性もあるため、10秒後にリトライする
+    if (!isStopping) {
+      pollTimeout = setTimeout(() => {
+        pollChat(liveChatId, key, pageToken);
+      }, 10000);
+    }
+  }
+}
+
+// ==========================================
+// メイン処理
+// ==========================================
 async function main(): Promise<void> {
+  if (!apiKey || apiKey === 'your_api_key_here') {
+    throw new Error('YOUTUBE_API_KEY が正しく設定されていません。');
+  }
+
   // MongoDB 接続
   await mongoose.connect(mongoUri);
   sendToParent('log', `🔌 MongoDB 接続完了`);
 
-  // chat-downloader 子プロセスを起動
-  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  chatProcess = spawn('python', ['-m', 'chat_downloader', videoUrl, '--output', '-'], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  // chatId 取得
+  sendToParent('log', `🔍 YouTube Data APIに接続中 (video: ${videoId})...`);
+  const liveChatId = await getActiveLiveChatId(videoId, apiKey);
 
-  sendToParent('log', `🚀 chat-downloader 起動 (video: ${videoId})`);
+  sendToParent('log', `🚀 公式APIで録画開始 (liveChatId: ${liveChatId})`);
   sendToParent('status', 'recording');
 
-  // 5分タイマー開始
+  // タイマーとポーリング開始
   resetIdleTimer();
-
-  // ---------- stdout パース ----------
-  let buffer = '';
-
-  chatProcess.stdout?.on('data', (chunk: Buffer) => {
-    buffer += chunk.toString('utf-8');
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || ''; // 未完了行はバッファに残す
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-
-      try {
-        const data = JSON.parse(trimmed);
-
-        // chat-downloader の出力フォーマットに対応
-        const timestamp = data.timestamp
-          ? new Date(data.timestamp / 1000) // マイクロ秒 → ミリ秒
-          : new Date();
-        const authorName = data.author?.name || data.author_name || '不明';
-        const message = data.message || '';
-
-        if (!message) continue;
-
-        // MongoDB に保存（非同期、エラーは無視しない）
-        ChatMessage.create({
-          sessionId,
-          timestamp,
-          authorName,
-          message,
-        }).catch((err) =>
-          sendToParent('log', `⚠️ DB保存エラー: ${err.message}`)
-        );
-
-        messageCount++;
-        resetIdleTimer(); // 新チャット受信 → 5分タイマーリセット
-
-        // 100件ごとに進捗通知
-        if (messageCount % 100 === 0) {
-          sendToParent('progress', { messageCount });
-        }
-      } catch {
-        // JSON パース失敗行は無視（ヘッダー行等）
-      }
-    }
-  });
-
-  // ---------- stderr ログ ----------
-  chatProcess.stderr?.on('data', (chunk: Buffer) => {
-    const text = chunk.toString('utf-8').trim();
-    if (text) {
-      sendToParent('log', `📝 chat-downloader: ${text}`);
-    }
-  });
-
-  // ---------- プロセス終了 ----------
-  chatProcess.on('close', (code) => {
-    sendToParent(
-      'log',
-      `🛑 chat-downloader 終了 (code: ${code}, 記録数: ${messageCount})`
-    );
-    cleanup(code === 0 ? 'stream_ended' : 'process_error');
-  });
-
-  chatProcess.on('error', (err) => {
-    sendToParent('log', `❌ chat-downloader エラー: ${err.message}`);
-    cleanup('process_error');
-  });
+  pollChat(liveChatId, apiKey);
 }
 
-// ---------- 親スレッドからの停止メッセージ ----------
+// 親スレッドからのメッセージ待ち受け
 parentPort?.on('message', (msg) => {
   if (msg === 'stop') {
     sendToParent('log', `🛑 手動停止リクエスト受信`);
@@ -172,8 +187,8 @@ parentPort?.on('message', (msg) => {
   }
 });
 
-// ---------- 起動 ----------
+// 起動
 main().catch((err) => {
-  sendToParent('log', `❌ ワーカー致命的エラー: ${err.message}`);
-  cleanup('fatal_error');
+  sendToParent('log', `❌ ワーカーエラー: ${err.message}`);
+  cleanup('process_error');
 });

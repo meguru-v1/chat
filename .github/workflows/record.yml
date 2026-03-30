@@ -34,15 +34,9 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: 🐍 Python セットアップ
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
       - name: 📦 依存インストール
         run: |
           npm ci
-          pip install chat-downloader
 
       - name: 🔤 日本語フォントダウンロード
         run: npx ts-node src/utils/fontDownloader.ts
@@ -56,6 +50,7 @@ jobs:
         env:
           MONGODB_URI: mongodb://localhost:27017/chat-archiver
           PORT: 3000
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
 
       - name: 🎙️ チャット録画開始
         run: |
@@ -79,12 +74,10 @@ jobs:
             ELAPSED=$(( ELAPSED + INTERVAL ))
             
             STATUS=$(curl -s http://localhost:3000/api/record/status)
-            ACTIVE=$(echo "$STATUS" | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          sessions = data.get('sessions', [])
-          active = [s for s in sessions if s['status'] == 'recording']
-          print(len(active))
+            ACTIVE=$(echo "$STATUS" | node -e "
+          const data = JSON.parse(require('fs').readFileSync('/dev/stdin').toString());
+          const active = data.sessions ? data.sessions.filter(s => s.status === 'recording').length : 0;
+          console.log(active);
           " 2>/dev/null || echo "0")
             
             if [ "$ACTIVE" = "0" ]; then
@@ -107,7 +100,7 @@ jobs:
       - name: 📊 セッション確認
         run: |
           echo "📋 セッション一覧:"
-          curl -s http://localhost:3000/api/sessions | python3 -m json.tool
+          curl -s http://localhost:3000/api/sessions | node -e "console.log(JSON.stringify(JSON.parse(require('fs').readFileSync(0, 'utf-8')), null, 2))"
 
       - name: 📄 PDFレポート生成
         run: |
