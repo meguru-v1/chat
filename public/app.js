@@ -139,13 +139,9 @@ function createSessionElement(session, displayState) {
     `;
     
     if (isCloud) {
-       // タイトル "📺 録画: VIDEO_ID (xxx分)" から VIDEO_ID を抽出
-       const match = session.videoId.match(/録画:\s*([a-zA-Z0-9_-]{11})/);
-       const vid = match ? match[1] : session.videoId;
-       
        actionHtml = `
-        <button class="btn-download" onclick="window.open('./reports/chat-report-${vid}.pdf', '_blank')" title="直接ダウンロード">
-          <i class="fas fa-file-pdf"></i> PDFを直接開く
+        <button class="btn-download" onclick="downloadCloudArtifact('${session.githubRunId}', this)" title="1日限定・ZIPダウンロード">
+          <i class="fas fa-file-pdf"></i> PDF(ZIP)をダウンロード
         </button>
       `;
     } else {
@@ -335,6 +331,48 @@ async function startCloudRecording(videoId) {
   } else {
     const d = await res.json().catch(()=>({}));
     showToast(`クラウド録画の開始に失敗: ${d.message || res.status}`, 'error');
+  }
+}
+
+async function downloadCloudArtifact(runId, btn) {
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 準備中...';
+  btn.disabled = true;
+
+  try {
+    // 1. その実行(Run)に紐づく成果物一覧を取得
+    const listUrl = `https://api.github.com/repos/${githubRepo}/actions/runs/${runId}/artifacts`;
+    const listRes = await fetch(listUrl, { headers: githubApiHeaders() });
+    const listData = await listRes.json();
+
+    if (!listData.artifacts || listData.artifacts.length === 0) {
+      throw new Error('PDFがまだ生成されていないか、1日の保存期限を過ぎています。');
+    }
+
+    // 2. 最初の成果物をダウンロードするためのURL(ZIP)を取得
+    const artifactId = listData.artifacts[0].id;
+    const downloadUrl = `https://api.github.com/repos/${githubRepo}/actions/artifacts/${artifactId}/zip`;
+    
+    // APIはリダイレクトを返すが、ブラウザの window.open では Authorization ヘッダーを送れないため、
+    // 一度 fetch でリダイレクト先の「署名付きS3 URL」を取得してから、そこにジャンプする。
+    const res = await fetch(downloadUrl, { 
+      headers: githubApiHeaders(),
+      redirect: 'follow' // 自動でリダイレクト先を追跡
+    });
+
+    if (res.ok) {
+      // res.url が Amazon S3 等の署名付き直リンクになっている
+      window.location.href = res.url;
+      showToast('ダウンロードを開始しました(ZIP形式)');
+    } else {
+      throw new Error('URLの取得に失敗しました。');
+    }
+  } catch (err) {
+    console.error('Download Error:', err);
+    showToast(err.message, 'error');
+  } finally {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
   }
 }
 
