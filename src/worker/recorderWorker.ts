@@ -136,7 +136,7 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
 
     const nextToken = data.nextPageToken;
     // APIが要求する待機時間 (短すぎるとBANされるため必ず守る)
-    const interval = data.pollingIntervalMillis || 5000;
+    const interval = data.pollingIntervalMillis || 10000;
 
     if (isStopping) return;
 
