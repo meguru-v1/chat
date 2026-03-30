@@ -20,12 +20,21 @@ concurrency:
 
 jobs:
   deploy:
-    # environment セクションを削除してデプロイの成功率を高める
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: 🔍 デバッグ：公開ファイルを確認
+        run: |
+          echo "📁 Public フォルダの構造:"
+          ls -R public
+          echo "📝 index.html のバージョン確認:"
+          grep "v1.2-Fix" public/index.html || echo "❌ バージョンスタンプが見つかりません"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
