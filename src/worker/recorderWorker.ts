@@ -160,8 +160,11 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
 // メイン処理
 // ==========================================
 async function main(): Promise<void> {
+  const maskedKey = apiKey ? `${apiKey.substring(0, 4)}***` : '未設定';
+  sendToParent('log', `🔑 APIキー取得状況: ${maskedKey}`);
+
   if (!apiKey || apiKey === 'your_api_key_here') {
-    throw new Error('YOUTUBE_API_KEY が正しく設定されていません。');
+    throw new Error('YOUTUBE_API_KEY が正しく設定されていません。GitHub Secretsを確認してください。');
   }
 
   // MongoDB 接続

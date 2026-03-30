@@ -273,8 +273,14 @@ async function loadCloudStatus() {
     }
     const data = await res.json();
     
-    // アプリの録画に関するワークフローだけを抽出
-    const recordRuns = data.workflow_runs.filter(w => w.name.includes('📺 YouTube チャット録画'));
+    // アプリの録画に関するワークフローを抽出（フィルタリングを柔軟に）
+    const recordRuns = data.workflow_runs.filter(w => {
+      const titleMatch = w.display_title && (w.display_title.includes('📺') || w.display_title.includes('録画'));
+      const flowMatch = w.name && (w.name.includes('録画') || w.name.includes('YouTube'));
+      return titleMatch || flowMatch;
+    });
+
+    console.log(`🔍 [Debug] 取得した全${data.workflow_runs.length}件中、録画に関係しそうなのは${recordRuns.length}件でした。`);
 
     activeList.innerHTML = '';
     historyList.innerHTML = '';
