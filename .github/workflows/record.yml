@@ -19,9 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
-      contents: write
-      pages: write
-      id-token: write
+      contents: read
+      actions: read
 
     services:
       mongodb:
@@ -130,14 +129,7 @@ jobs:
           
           if [ "$HTTP_CODE" = "200" ]; then
             echo "✅ PDF生成完了"
-            mkdir -p public/reports
-            cp output/chat-report-${{ inputs.video_id }}.pdf public/reports/
-            
-            git config --global user.name "github-actions[bot]"
-            git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git add public/reports/
-            git commit -m "chore: 録画レポートを追加 (${{ inputs.video_id }})" || echo "No changes to commit"
-            git push origin main
+            ls -la output/
           else
             echo "⚠️ PDF生成スキップ（メッセージが0件の可能性）"
           fi
@@ -148,4 +140,4 @@ jobs:
         with:
           name: chat-report-${{ inputs.video_id }}
           path: output/
-          retention-days: 30
+          retention-days: 1
