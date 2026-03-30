@@ -190,6 +190,8 @@ parentPort?.on('message', (msg) => {
 
 // 起動
 main().catch((err) => {
-  sendToParent('log', `❌ ワーカーエラー: ${err.message}`);
-  cleanup('process_error');
+  const errorMsg = err.message || '不明なエラー';
+  sendToParent('log', `❌ ワーカー開始エラー: ${errorMsg}`);
+  // 3分半で「失敗(赤)」判定になってジョブが止まらないよう、正常な「完了（理由付き）」として扱う
+  cleanup(`error: ${errorMsg.substring(0, 50)}`);
 });

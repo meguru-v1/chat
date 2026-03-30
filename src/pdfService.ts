@@ -111,11 +111,7 @@ export async function generatePdf(sessionId: string): Promise<Buffer> {
     .sort({ timestamp: 1 })
     .lean<IChatMessage[]>();
 
-  if (messages.length === 0) {
-    throw new Error(`セッション ${sessionId} のメッセージが見つかりません`);
-  }
-
-  // 統計計算
+  // 0件でもエラーにせず、統計計算へ進む（空の統計が生成される）
   const stats = computeStats(messages as IChatMessage[]);
   const graphLines = buildTextGraph(stats.minuteStats);
 
