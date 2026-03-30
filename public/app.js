@@ -317,21 +317,49 @@ async function loadCloudStatus() {
 }
 
 async function startCloudRecording(videoId) {
-  const url = `https://api.github.com/repos/${githubRepo}/actions/workflows/record.yml/dispatches`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: githubApiHeaders(),
-    body: JSON.stringify({
-      ref: 'main',
-      inputs: { video_id: videoId }
-    })
-  });
+  try {
+    // 1. リポジトリ名の形式チェック
+    if (!githubRepo.includes('/')) {
+      throw new Error('リポジトリ名は "ユーザー名/リポジトリ名" の形式で入力してください');
+    }
 
-  if (res.ok || res.status === 204) {
-    showToast(`クラウド上で ${videoId} の録画命令を送信しました`);
-  } else {
-    const d = await res.json().catch(()=>({}));
-    showToast(`クラウド録画の開始に失敗: ${d.message || res.status}`, 'error');
+    showToast('クラウド情報を確認中...', 'success');
+
+    // 2. リポジトリ情報を取得してデフォルトブランチを特定
+    const repoUrl = `https://api.github.com/repos/${githubRepo}`;
+    const repoRes = await fetch(repoUrl, { headers: githubApiHeaders() });
+    
+    if (!repoRes.ok) {
+      if (repoRes.status === 404) throw new Error('リポジトリが見つかりません。名前を確認してください。');
+      if (repoRes.status === 401) throw new Error('トークンが無効です。GitHub設定を確認してください。');
+      throw new Error('リポジトリ情報の取得に失敗しました');
+    }
+    
+    const repoData = await repoRes.json();
+    const defaultBranch = repoData.default_branch || 'main';
+
+    // 3. 録画命令（workflow_dispatch）を送信
+    const dispatchUrl = `https://api.github.com/repos/${githubRepo}/actions/workflows/record.yml/dispatches`;
+    const res = await fetch(dispatchUrl, {
+      method: 'POST',
+      headers: githubApiHeaders(),
+      body: JSON.stringify({
+        ref: defaultBranch,
+        inputs: { video_id: videoId }
+      })
+    });
+
+    if (res.ok || res.status === 204) {
+      showToast(`クラウド上で ${videoId} の録画命令を送信しました (${defaultBranch})`);
+    } else {
+      const d = await res.json().catch(()=>({}));
+      // GitHubからの詳細なメッセージを表示（例: "Workflow does not have 'workflow_dispatch' trigger" 等）
+      const errorMsg = d.message || `エラー: ${res.status}`;
+      throw new Error(`GitHubからの拒否: ${errorMsg}`);
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+    console.error('Cloud Start Error:', err);
   }
 }
 
