@@ -14,7 +14,7 @@ import mongoose from 'mongoose';
 import { ChatMessage } from '../models/ChatMessage';
 
 // ---------- 定数 ----------
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5分
+const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 60分 (チャットが全くなくても1時間は維持)
 
 // ---------- ワーカーデータ ----------
 interface WorkerInput {
@@ -35,8 +35,8 @@ let pollTimeout: NodeJS.Timeout | null = null;
 function resetIdleTimer(): void {
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    sendToParent('log', `⏰ 5分間新規チャットなし — タイムアウト停止`);
-    cleanup('timeout');
+    sendToParent('log', `⏰ 60分間APIレスポンスまたはチャットなし — タイムアウト停止`);
+    cleanup('idle_timeout');
   }, IDLE_TIMEOUT_MS);
 }
 
@@ -53,6 +53,7 @@ async function cleanup(reason: string): Promise<void> {
   if (idleTimer) clearTimeout(idleTimer);
   if (pollTimeout) clearTimeout(pollTimeout);
 
+  sendToParent('log', `🏁 クリーンアップ開始 (理由: ${reason})`);
   sendToParent('finished', { reason, sessionId, messageCount });
 
   try {
@@ -112,27 +113,27 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
 
     const data = (await res.json()) as any;
 
-    // 取得したメッセージをパースして保存
-    if (data.items && data.items.length > 0) {
-      const messagesToSave = data.items.map((item: any) => ({
-        sessionId,
-        timestamp: new Date(item.snippet.publishedAt),
-        authorName: item.authorDetails.displayName || '不明',
-        message: item.snippet.displayMessage || ''
-      })).filter((m: any) => m.message);
+      // API通信に成功している場合は、チャットが0件でもタイマーをリセットして録画を維持する
+      resetIdleTimer();
 
-      if (messagesToSave.length > 0) {
-        for (const m of messagesToSave) {
-          await ChatMessage.create(m).catch(() => {});
+      if (data.items && data.items.length > 0) {
+        const messagesToSave = data.items.map((item: any) => ({
+          sessionId,
+          timestamp: new Date(item.snippet.publishedAt),
+          authorName: item.authorDetails.displayName || '不明',
+          message: item.snippet.displayMessage || ''
+        })).filter((m: any) => m.message);
+
+        if (messagesToSave.length > 0) {
+          for (const m of messagesToSave) {
+            await ChatMessage.create(m).catch(() => {});
+          }
+
+          messageCount += messagesToSave.length;
+          // チャット受信を親に通知
+          sendToParent('progress', { messageCount });
         }
-
-        messageCount += messagesToSave.length;
-        resetIdleTimer();
-
-        // ある程度の単位で進捗を親に送る
-        sendToParent('progress', { messageCount });
       }
-    }
 
     const nextToken = data.nextPageToken;
     // APIが要求する待機時間 (短すぎるとBANされるため必ず守る)
