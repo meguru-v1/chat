@@ -6,7 +6,7 @@
  *
  * ハイブリッド終了判定:
  *   A) YouTube APIが403/404(配信終了)を返す → 配信終了
- *   B) 5分間新規チャットなし → タイムアウト終了
+ *   B) 1時間(60分)間新規チャットなし・API応答なし → タイムアウト終了
  *   C) 親スレッドから 'stop' メッセージ → 強制終了
  */
 import { parentPort, workerData } from 'worker_threads';
@@ -31,7 +31,7 @@ let messageCount = 0;
 let idleTimer: NodeJS.Timeout | null = null;
 let pollTimeout: NodeJS.Timeout | null = null;
 
-/** 5分アイドルタイマーをリセット */
+/** アイドルタイマーをリセット */
 function resetIdleTimer(): void {
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
@@ -101,6 +101,9 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
 
   try {
     const res = await fetch(url);
+    // API通信に成功している場合は、中身に関わらずタイムアウトをリセットして録画を延長
+    resetIdleTimer();
+
     if (!res.ok) {
       if (res.status === 403 || res.status === 404) {
         // 配信終了やアーカイブ化に伴いチャットが閉じられた
@@ -113,27 +116,24 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
 
     const data = (await res.json()) as any;
 
-      // API通信に成功している場合は、チャットが0件でもタイマーをリセットして録画を維持する
-      resetIdleTimer();
+    if (data.items && data.items.length > 0) {
+      const messagesToSave = data.items.map((item: any) => ({
+        sessionId,
+        timestamp: new Date(item.snippet.publishedAt),
+        authorName: item.authorDetails.displayName || '不明',
+        message: item.snippet.displayMessage || ''
+      })).filter((m: any) => m.message);
 
-      if (data.items && data.items.length > 0) {
-        const messagesToSave = data.items.map((item: any) => ({
-          sessionId,
-          timestamp: new Date(item.snippet.publishedAt),
-          authorName: item.authorDetails.displayName || '不明',
-          message: item.snippet.displayMessage || ''
-        })).filter((m: any) => m.message);
-
-        if (messagesToSave.length > 0) {
-          for (const m of messagesToSave) {
-            await ChatMessage.create(m).catch(() => {});
-          }
-
-          messageCount += messagesToSave.length;
-          // チャット受信を親に通知
-          sendToParent('progress', { messageCount });
+      if (messagesToSave.length > 0) {
+        for (const m of messagesToSave) {
+          await ChatMessage.create(m).catch(() => {});
         }
+
+        messageCount += messagesToSave.length;
+        // 進捗を反映（Web UIに件数が表示されるようになる）
+        sendToParent('progress', { messageCount });
       }
+    }
 
     const nextToken = data.nextPageToken;
     // APIが要求する待機時間 (短すぎるとBANされるため必ず守る)
@@ -146,7 +146,7 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
     }, interval);
 
   } catch (err: any) {
-    sendToParent('log', `⚠️ チャット取得警告: ${err.message}`);
+    sendToParent('log', `⚠️ チャット取得警告 (10秒後に再試行): ${err.message}`);
     // 一時的なネットワークエラーの可能性もあるため、10秒後にリトライする
     if (!isStopping) {
       pollTimeout = setTimeout(() => {

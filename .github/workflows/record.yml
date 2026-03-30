@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
-      contents: read
+      contents: write
       actions: read
 
     services:
@@ -48,9 +48,10 @@ jobs:
       - name: 🚀 APIサーバー起動
         run: |
           npx ts-node src/app.ts &
-          echo "サーバー起動中..."
+          echo "⏳ サーバー起動を5秒間待機しています..."
           sleep 5
-          curl -s http://localhost:3000/health
+          echo "🔍 ヘルスチェック実行中..."
+          curl -v http://localhost:3000/health || (echo "❌ サーバーが起動していません" && exit 1)
         env:
           MONGODB_URI: mongodb://localhost:27017/chat-archiver
           PORT: 3000
@@ -58,10 +59,11 @@ jobs:
 
       - name: 🎙️ チャット録画開始
         run: |
-          echo "🎬 録画開始: ${{ inputs.video_id }}"
-          curl -s -X POST http://localhost:3000/api/record/start \
+          echo "🎬 録画開始リクエスト: ${{ inputs.video_id }}"
+          RESPONSE=$(curl -v -X POST http://localhost:3000/api/record/start \
             -H "Content-Type: application/json" \
-            -d '{"videoId": "${{ inputs.video_id }}"}'
+            -d "{\"videoId\": \"${{ inputs.video_id }}\"}")
+          echo "📄 サーバーレスポンス: $RESPONSE"
         env:
           MONGODB_URI: mongodb://localhost:27017/chat-archiver
 
