@@ -3,6 +3,10 @@ name: Deploy Web UI to GitHub Pages
 on:
   push:
     branches: ["main"]
+  workflow_run:
+    workflows: ["📺 YouTube チャット録画 & PDFレポート生成"]
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
@@ -19,6 +23,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
