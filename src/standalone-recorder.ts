@@ -1,25 +1,25 @@
 /**
- * standalone-recorder.ts — スタンドアロン録画スクリプト (直行モード)
+ * standalone-recorder.ts — スタンドアロン録画スクリプト (Puppeteer版)
  *
  * 使い方:
  *   npx ts-node src/standalone-recorder.ts --video-id [VIDEO_ID] --timeout [MINUTES]
- *
- * 背景プロセスや監視ループを介さず、このプロセス一つで録画・終了判定・PDF生成まで完走します。
  */
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { ChatMessage } from './models/ChatMessage';
 import { generatePdf } from './pdfService';
-import fs from 'fs';
-import path from 'path';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+
+puppeteer.use(StealthPlugin());
 
 // ---------- 引数解析 ----------
 const args = process.argv.slice(2);
-const videoId = getArg('--video-id') || '';
-const timeoutMinutes = parseInt(getArg('--timeout') || '360', 10);
+const videoId = getArgValue('--video-id') || '';
+const timeoutMinutes = parseInt(getArgValue('--timeout') || '360', 10);
 const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/chat-archiver';
 
-function getArg(name: string): string | undefined {
+function getArgValue(name: string): string | undefined {
   const idx = args.indexOf(name);
   if (idx !== -1 && args[idx + 1]) return args[idx + 1];
   return undefined;
@@ -36,157 +36,166 @@ let messageCount = 0;
 const startTime = Date.now();
 const maxWaitMs = timeoutMinutes * 60 * 1000;
 
-// ---------- グローバルエラーハンドリング ----------
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ 未ハンドルの拒絶が発生しました:', reason);
-  // 致命的な場合は終了
-  if (!isStopping) finish('unhandled_rejection');
-});
-
-// ---------- YouTube チャット取得 (スクレイピング方式) ----------
-
-import { LiveChat } from 'youtube-chat';
+// ---------- メイン録画ロジック (ブラウザ方式) ----------
 
 async function startRecording() {
-  console.log(`🚀 ライブチャット監視を開始します (Scraping Mode / APIキー不要)`);
-  
-  // liveId は YouTube の videoId と同じです
-  const liveChat = new LiveChat({ liveId: videoId });
-  let lastMessageTime = Date.now();
+  console.log(`🚀 ライブチャット監視を開始します (Browser Mode / Puppeteer)`);
+  console.log(`🎥 Video ID: ${videoId}`);
 
-  // チャット受信
-  liveChat.on('chat', async (chatItem) => {
-    if (isStopping) return;
-
-    // メッセージのテキストを結合 (テキストと絵文字の混在対応)
-    const messageText = chatItem.message.map((part: any) => part.text || '').join('');
-    if (!messageText) return;
-
-    const messageToSave = {
-      sessionId: videoId,
-      messageId: chatItem.id,
-      timestamp: new Date(chatItem.timestamp),
-      authorName: chatItem.author.name,
-      message: messageText
-    };
-
-    try {
-      // 重複は messageId (Unique index) で自動排除される
-      await ChatMessage.insertMany([messageToSave], { ordered: false }).catch((err: any) => {
-        if (err.code !== 11000) console.error(`❌ DB保存エラー: ${err.message}`);
-      });
-      
-      messageCount++;
-      
-      // 30件ごとに進捗を表示
-      if (messageCount % 30 === 0 || messageCount === 1) {
-        console.log(`📡 [${new Date().toLocaleTimeString()}] +${messageCount} 件記録中... (最新: ${messageToSave.authorName})`);
-      }
-      
-      lastMessageTime = Date.now();
-    } catch (err: any) {
-      console.error(`❌ 保存処理エラー: ${err.message}`);
-    }
-  });
-
-  // エラー発生 (再試行はライブラリが内部で実施)
-  liveChat.on('error', (err: any) => {
-    console.warn(`⚠️ 監視警告: ${err.message}`);
-  });
-
-  // タイムアウト監視 (Actions の制限時間用)
-  const timeoutCheckInterval = setInterval(() => {
-    const elapsedTotal = Date.now() - startTime;
-    if (elapsedTotal >= maxWaitMs) {
-      console.log(`⏰ ワークフローの制限時間 (${timeoutMinutes}分) に達したため、安全に終了処理へ移行します`);
-      clearInterval(timeoutCheckInterval);
-      liveChat.stop();
-      finish('workflow_timeout');
-    }
-
-    // アイドルタイムアウト (20分間何もなければ終了とみなす)
-    const idleElapsed = Date.now() - lastMessageTime;
-    if (idleElapsed > 20 * 60 * 1000) {
-      console.log(`💤 20分間チャットの動きがないため、終了と判断します`);
-      clearInterval(timeoutCheckInterval);
-      liveChat.stop();
-      finish('idle_timeout');
-    }
-  }, 60000); // 1分ごとにチェック
-
-  // 監視開始！
-  // start() は監視が停止（終了）するまで解決しません
+  let browser;
   try {
-    const ok = await liveChat.start();
-    clearInterval(timeoutCheckInterval);
-    if (!isStopping) {
-      console.log('🏁 YouTube 側でチャットの終了が検知されました');
-      finish(ok ? 'stream_finished' : 'connection_failed');
+    browser = await puppeteer.launch({
+      headless: true, // Actions では true (安定)
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu'
+      ]
+    });
+
+    const page = await browser.newPage();
+    
+    // 不要なリソースをブロックして軽量化
+    await page.setRequestInterception(true);
+    page.on('request', (req: any) => {
+      if (['image', 'font', 'stylesheet', 'media'].includes(req.resourceType())) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
+    // チャット専用ページへ移動
+    const chatUrl = `https://www.youtube.com/live_chat?v=${videoId}`;
+    await page.goto(chatUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+
+    console.log('✅ チャットページを読み込みました。監視を開始します。');
+
+    // ブラウザ内からのメッセージを受け取る関数を公開
+    await page.exposeFunction('onNewMessage', async (msg: any) => {
+      if (isStopping) return;
+      
+      try {
+        await ChatMessage.insertMany([{
+          sessionId: videoId,
+          messageId: msg.id,
+          timestamp: new Date(msg.timestampUsec / 1000), // 微秒 -> ミリ秒
+          authorName: msg.author,
+          message: msg.text
+        }], { ordered: false }).catch(err => {
+            // 重複エラー(11000)は無視
+            if (err.code !== 11000) console.error(`❌ DB保存エラー: ${err.message}`);
+        });
+
+        messageCount++;
+        if (messageCount % 20 === 0 || messageCount === 1) {
+          console.log(`📡 [${new Date().toLocaleTimeString()}] +${messageCount} 件記録中... (最新: ${msg.author})`);
+        }
+      } catch (e: any) {
+        console.error('❌ メッセージ処理エラー:', e.message);
+      }
+    });
+
+    // ブラウザ内でチャットDOMを監視するスクリプトを実行
+    await page.evaluate(() => {
+      // 初期バッファの回収
+      const collectExisting = () => {
+        const items = document.querySelectorAll('yt-live-chat-text-message-renderer');
+        items.forEach((item: any) => processElement(item));
+      };
+
+      const processElement = (el: any) => {
+        const id = el.getAttribute('id');
+        const author = el.querySelector('#author-name')?.textContent || 'Unknown';
+        const text = el.querySelector('#message')?.textContent || '';
+        const timestampUsec = el.data?.timestampUsec || Date.now() * 1000;
+        
+        if (id && text) {
+          (window as any).onNewMessage({ id, author, text, timestampUsec });
+        }
+      };
+
+      // 1. まず初期表示分を拾う
+      collectExisting();
+
+      // 2. 以降、新着を監視
+      const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          mutation.addedNodes.forEach((node: any) => {
+            if (node.nodeName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER') {
+              processElement(node);
+            }
+          });
+        }
+      });
+
+      const container = document.querySelector('#items.yt-live-chat-item-list-renderer');
+      if (container) {
+        observer.observe(container, { childList: true });
+      } else {
+        console.error('❌ チャットコンテナが見つかりません');
+      }
+    });
+
+    // 終了判定ループ
+    while (!isStopping) {
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= maxWaitMs) {
+        console.log(`⏰ 設定されたタイムアウト (${timeoutMinutes}分) に達しました。終了します。`);
+        await finish('timeout');
+        break;
+      }
+
+      // 接続が切れていないかチェック
+      if (page.isClosed()) {
+        console.error('❌ ブラウザが閉じられました');
+        await finish('browser_closed');
+        break;
+      }
+
+      await new Promise(r => setTimeout(r, 10000));
     }
+
   } catch (err: any) {
-    if (!isStopping) {
-      console.error(`❌ ライブチャット監視中に致命的エラーが発生しました: ${err.message}`);
-      finish('api_error');
-    }
+    console.error(`❌ 致命的なエラー: ${err.message}`);
+    await finish('fatal_error');
+  } finally {
+    if (browser) await browser.close();
   }
 }
-
-// ---------- 終了・PDF生成 ----------
 
 async function finish(reason: string) {
   if (isStopping) return;
   isStopping = true;
-
-  console.log(`🏁 録画フェーズ完了 (理由: ${reason}) / 保存件数: ${messageCount} 件`);
-  console.log(`📄 PDF生成を開始します... (Video: ${videoId})`);
+  console.log(`🏁 録画を終了します。原因: ${reason}`);
+  console.log(`📊 合計メッセージ数: ${messageCount}`);
 
   try {
-    const outputDir = path.resolve(process.cwd(), 'output');
-    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
-
-    const pdfBuffer = await generatePdf(videoId);
-    const pdfPath = path.join(outputDir, `chat-report-${videoId}.pdf`);
-    fs.writeFileSync(pdfPath, pdfBuffer);
-
-    console.log(`✅ レポート生成成功: ${pdfPath}`);
+    console.log('📄 PDFレポートを作成中...');
+    const pdfPath = await generatePdf(videoId);
+    console.log(`✅ PDF作成完了: ${pdfPath}`);
   } catch (err: any) {
     console.error(`❌ PDF生成エラー: ${err.message}`);
-  } finally {
-    if (mongoose.connection.readyState !== 0) {
-      await mongoose.disconnect();
-      console.log('🔌 MongoDB 切断完了');
-    }
-    console.log('🚪 プロセスを終了します');
-    process.exit(0);
   }
+
+  // DB切断
+  await mongoose.disconnect();
+  console.log('👋 終了しました。');
+  process.exit(0);
 }
 
-// ---------- メイン実行 ----------
-
-async function main() {
-  console.log('--- YouTube Chat Smart-Archiver (Scraping Mode) ---');
-  console.log(`🎯 Target: ${videoId}`);
-  console.log(`⏳ Timeout: ${timeoutMinutes} min`);
-  console.log(`🛡️  Mode: No API Key Required`);
-
-  try {
-    console.log(`🔌 MongoDB に接続中...`);
-    await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 5000,
-    });
+// ---------- 接続と開始 ----------
+mongoose.connect(mongoUri)
+  .then(() => {
     console.log('✅ MongoDB 接続成功');
-    
-    // シグナルハンドリング
-    process.on('SIGINT', () => finish('manual_stop'));
-    process.on('SIGTERM', () => finish('manual_stop'));
-
-    await startRecording();
-  } catch (err: any) {
-    console.error(`❌ 起動フェーズで致命的エラーが発生しました: ${err.message}`);
+    startRecording();
+  })
+  .catch(err => {
+    console.error('❌ MongoDB 接続失敗:', err.message);
     process.exit(1);
-  }
-}
-
-main();
-
-
+  });

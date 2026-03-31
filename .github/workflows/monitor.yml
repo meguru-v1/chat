@@ -1,0 +1,29 @@
+name: 🔍 チャンネル自動監視 (Monitor)
+
+on:
+  schedule:
+    - cron: '*/10 * * * *' # 10分おきに巡回
+  workflow_dispatch: # 手動起動用
+
+jobs:
+  check-and-trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: 🛰️ チャンネル巡回
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: npm run monitor
