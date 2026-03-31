@@ -43,120 +43,25 @@ jobs:
           cache: 'npm'
 
       - name: 📦 依存インストール
-        run: |
-          npm ci
+        run: npm ci
 
       - name: 🔤 日本語フォントダウンロード
         run: npx ts-node src/utils/fontDownloader.ts
 
-      - name: 🚀 APIサーバー起動
-        run: |
-          npx ts-node src/app.ts &
-          echo "⏳ サーバー起動を15秒間待機しています..."
-          sleep 15
-          echo "🔍 ヘルスチェック実行中..."
-          curl -v http://localhost:3000/health || (echo "❌ サーバーが起動していません" && exit 1)
-        env:
-          MONGODB_URI: mongodb://localhost:27017/chat-archiver
-          PORT: 3000
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-
-      - name: 🎙️ チャット録画開始
-        run: |
-          echo "🎬 録画開始リクエスト: ${{ inputs.video_id }}"
-          RESPONSE=$(curl -v -X POST http://localhost:3000/api/record/start \
-            -H "Content-Type: application/json" \
-            -d '{"videoId": "${{ inputs.video_id }}"}')
-          echo "📄 サーバーレスポンス: $RESPONSE"
-        env:
-          MONGODB_URI: mongodb://localhost:27017/chat-archiver
-
-      - name: ⏳ 録画待機（配信終了 or タイムアウト）
-        run: |
-          MAX_WAIT=$(( ${{ inputs.timeout_minutes }} * 60 ))
-          ELAPSED=0
-          INTERVAL=30
-          FIRST_CHECK_DONE=false
-
-          echo "⏳ 最大 ${{ inputs.timeout_minutes }}分 待機します。"
-
-          MISSING_COUNT=0
-
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            sleep $INTERVAL
-            ELAPSED=$(( ELAPSED + INTERVAL ))
-            
-            STATUS=$(curl -s http://localhost:3000/api/record/status)
-            echo "📊 Current Status: $STATUS" # 生のレスポンスをログに出力
-
-            ACTIVE=$(echo "$STATUS" | node -e "
-          try {
-            const data = JSON.parse(require('fs').readFileSync('/dev/stdin').toString());
-            const active = data.sessions ? data.sessions.filter(s => s.status === 'recording').length : 0;
-            process.stdout.write(active.toString());
-          } catch(e) {
-            process.stdout.write('0');
-          }
-          " 2>/dev/null || echo "0")
-            
-            if [ "$ACTIVE" != "0" ]; then
-              FIRST_CHECK_DONE=true
-              MISSING_COUNT=0
-            fi
-
-            if [ "$ACTIVE" = "0" ]; then
-              if [ "$FIRST_CHECK_DONE" = "true" ]; then
-                MISSING_COUNT=$(( MISSING_COUNT + 1 ))
-                echo "⚠️ 録画セッションが見当たりません (リトライ $MISSING_COUNT/3)"
-                
-                if [ $MISSING_COUNT -ge 3 ]; then
-                  echo "✅ 録画完了（配信終了または長時間切断により終了）"
-                  break
-                fi
-              else
-                # まだ一度も録画開始を確認できていない場合
-                if [ $ELAPSED -gt 150 ]; then
-                  echo "⚠️ 録画が開始されませんでした（ライブ配信ではない可能性があります）"
-                  break
-                fi
-                echo "⏳ サーバー起動中につき待機しています... (${ELAPSED}秒経過)"
-              fi
-            else
-              MINS=$(( ELAPSED / 60 ))
-              echo "📡 録画継続中... (${MINS}分経過 / 安定稼働)"
-            fi
-          done
-
-          if [ $ELAPSED -ge $MAX_WAIT ]; then
-            echo "⏰ 最大録画時間の $MAX_WAIT 秒に到達しました — 停止リクエストを送信します"
-            curl -s -X POST http://localhost:3000/api/record/stop \
-              -H "Content-Type: application/json" \
-              -d '{"videoId": "${{ inputs.video_id }}"}'
-            sleep 10
-          fi
-
-      - name: 📊 セッション確認
-        run: |
-          echo "📋 セッション一覧:"
-          curl -s http://localhost:3000/api/sessions | node -e "console.log(JSON.stringify(JSON.parse(require('fs').readFileSync(0, 'utf-8')), null, 2))"
-
-      - name: 📄 PDFレポート生成
+      - name: 🎙️ スタンドアロン録画開始
+        # 背景サーバーを使わず、一直線に録画・PDF生成まで実行
         run: |
           mkdir -p output
-          HTTP_CODE=$(curl -s -o output/chat-report-${{ inputs.video_id }}.pdf \
-            -w "%{http_code}" \
-            http://localhost:3000/api/sessions/${{ inputs.video_id }}/pdf)
-          
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "✅ PDF生成完了"
-            ls -la output/
-          else
-            echo "⚠️ PDF生成スキップ（メッセージが0件の可能性）"
-          fi
+          npx ts-node src/standalone-recorder.ts \
+            --video-id "${{ inputs.video_id }}" \
+            --timeout "${{ inputs.timeout_minutes }}"
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          MONGODB_URI: mongodb://localhost:27017/chat-archiver
 
       - name: 📤 成果物アップロード
-        uses: actions/upload-artifact@v4
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: chat-report-${{ inputs.video_id }}
           path: output/
