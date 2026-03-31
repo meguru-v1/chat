@@ -31,6 +31,22 @@ interface SessionStats {
 
 // ---------- 統計計算 ----------
 
+// ---------- 統計計算 ----------
+
+/** 日本時間 (JST) の Date オブジェクトまたは文字列を生成するヘルパー */
+function toJST(date: Date | string | number): Date {
+  const d = new Date(date);
+  // 現地時間が JST (UTC+9) になるようにオフセット
+  return new Date(d.getTime() + 9 * 60 * 60 * 1000);
+}
+
+/** HH:MM 形式の文字列を生成 (JST) */
+function formatTimeJST(date: Date): string {
+  const d = new Date(date.getTime());
+  // UTCとして扱うことで強制的にオフセット後の数値を取得
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+}
+
 function computeStats(messages: IChatMessage[]): SessionStats {
   if (messages.length === 0) {
     return {
@@ -51,26 +67,23 @@ function computeStats(messages: IChatMessage[]): SessionStats {
   const totalMinutes = Math.max(1, Math.ceil(totalDurationMs / (60 * 1000)));
 
   // 2. 最適な集計単位 (binSize) の決定
-  // グラフが 30〜40行程度に収まるように調整
   let binSizeMin = 1;
-  if (totalMinutes > 300) binSizeMin = 15;      // 5時間超え
-  else if (totalMinutes > 120) binSizeMin = 10; // 2時間〜5時間
-  else if (totalMinutes > 40) binSizeMin = 5;   // 40分〜2時間
+  if (totalMinutes > 300) binSizeMin = 15;
+  else if (totalMinutes > 120) binSizeMin = 10;
+  else if (totalMinutes > 40) binSizeMin = 5;
   
   const binMs = binSizeMin * 60 * 1000;
 
-  // 3. 全スロット（等間隔）の生成
+  // 3. 全スロット（等間隔）の生成 (JST基準)
   const minuteStats: MinuteStats[] = [];
   const startOfFirstBin = Math.floor(startMs / binMs) * binMs;
   
   for (let t = startOfFirstBin; t <= endMs; t += binMs) {
-    const d = new Date(t);
-    const dEnd = new Date(t + binMs - 1);
-    const timeLabel = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    const endLabel = `${String(dEnd.getHours()).padStart(2, '0')}:${String(dEnd.getMinutes()).padStart(2, '0')}`;
+    const dStart = toJST(new Date(t));
+    const dEnd = toJST(new Date(t + binMs - 1));
     
     minuteStats.push({
-      time: `${timeLabel}-${endLabel}`,
+      time: `${formatTimeJST(dStart)}-${formatTimeJST(dEnd)}`,
       count: 0
     });
   }
@@ -115,7 +128,6 @@ function buildTextGraph(
   for (const stat of minuteStats) {
     const barLen = maxCount > 0 ? Math.round((stat.count / maxCount) * maxBarWidth) : 0;
     const bar = '█'.repeat(barLen);
-    // 0件の場合は小さな点、ある場合はブロック
     const displayBar = barLen > 0 ? bar : '·';
     lines.push(
       `${stat.time.padEnd(12)} │${displayBar} ${stat.count}`
@@ -136,7 +148,6 @@ export async function generatePdf(sessionId: string): Promise<Buffer> {
     .sort({ timestamp: 1 })
     .lean<IChatMessage[]>();
 
-  // 0件でもエラーにせず、統計計算へ進む（空の統計が生成される）
   const stats = computeStats(messages as IChatMessage[]);
   const graphLines = buildTextGraph(stats.minuteStats);
 
@@ -169,7 +180,7 @@ export async function generatePdf(sessionId: string): Promise<Buffer> {
     doc.moveDown(0.5);
     doc.fontSize(12).text(`セッションID: ${sessionId}`, { align: 'center' });
     doc.text(
-      `生成日時: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
+      `生成日時 (JST): ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
       { align: 'center' }
     );
 
@@ -186,7 +197,7 @@ export async function generatePdf(sessionId: string): Promise<Buffer> {
     doc.text(`記録時間:         ${stats.durationMinutes} 分`);
     doc.text(`平均流速:         ${stats.avgPerMinute} 件/分`);
     doc.text(
-      `🔥 ピーク時間:     ${stats.peakMinute.time} (${stats.peakMinute.count} 件/分)`
+      `🔥 ピーク時間帯:     ${stats.peakMinute.time} (${stats.peakMinute.count} 件)`
     );
 
     doc.moveDown(1);
@@ -194,7 +205,7 @@ export async function generatePdf(sessionId: string): Promise<Buffer> {
     // ======== 流速グラフ ========
     doc
       .fontSize(16)
-      .text('── 毎分チャット流速グラフ ──', { underline: true });
+      .text('── タイムゾーン別チャット密度 ──', { underline: true });
     doc.moveDown(0.5);
 
     doc.fontSize(8);
@@ -214,17 +225,14 @@ export async function generatePdf(sessionId: string): Promise<Buffer> {
     doc.fontSize(9);
 
     for (const msg of messages) {
-      const d = new Date(msg.timestamp);
-      const timeStr = d.toLocaleTimeString('ja-JP', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        timeZone: 'Asia/Tokyo',
-      });
+      const d = toJST(new Date(msg.timestamp));
+      const h = String(d.getUTCHours()).padStart(2, '0');
+      const m = String(d.getUTCMinutes()).padStart(2, '0');
+      const s = String(d.getUTCSeconds()).padStart(2, '0');
+      const timeStr = `${h}:${m}:${s}`;
 
       const line = `[${timeStr}] ${msg.authorName}: ${msg.message}`;
 
-      // ページ下端チェック（余白50pt + フッター用30pt）
       if (doc.y > doc.page.height - 80) {
         doc.addPage();
       }

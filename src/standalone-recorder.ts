@@ -48,7 +48,8 @@ process.on('unhandledRejection', (reason, promise) => {
 // ---------- YouTube API 機能 ----------
 
 let retryCount = 0;
-const MAX_RETRIES = 30; // 約15分（30秒間隔の場合）
+let consecutive403Count = 0;
+const MAX_RETRIES = 60; // リトライ回数（1分間隔 * 60 = 1時間まで粘る）
 let lastMessageTime = Date.now();
 
 async function getActiveLiveChatId(vid: string, key: string): Promise<string> {
@@ -93,11 +94,26 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
     if (!res.ok) {
       if (res.status === 403 || res.status === 404 || res.status >= 500) {
         retryCount++;
-        const waitSec = 60; // 30秒から60秒に延長（APIレート制限対策）
+        if (res.status === 403) consecutive403Count++;
+
+        const waitSec = 60;
         console.warn(`⚠️ API警告 (${res.status}): 再接続を試みます (${retryCount}/${MAX_RETRIES}) ... ${waitSec}秒待機`);
         
+        // 403 が 3回続いたら、チャットIDをリフレッシュしてみる
+        if (consecutive403Count >= 3) {
+          console.log(`🔄 403 エラーが継続しているため、セッションのリセット（再取得）を試みます...`);
+          try {
+            const newChatId = await getActiveLiveChatId(videoId, key);
+            consecutive403Count = 0;
+            pollTimeout = setTimeout(() => pollChat(newChatId, key, undefined), 5000); // 5秒後に新規リクエスト
+            return;
+          } catch (e: any) {
+            console.error(`❌ セッションのリセットに失敗しました: ${e.message}`);
+          }
+        }
+
         if (retryCount >= MAX_RETRIES) {
-          console.error(`❌ 最大リトライ回数 (計30分) に達しました。配信終了とみなします。`);
+          console.error(`❌ 最大リトライ回数 (計1時間) に達しました。配信終了とみなします。`);
           return finish('api_error_limit');
         }
         
@@ -109,20 +125,27 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
 
     // 成功した場合はリトライカウンタをリセット
     retryCount = 0;
+    consecutive403Count = 0;
     const data = (await res.json()) as any;
     
     if (data.items && data.items.length > 0) {
       lastMessageTime = Date.now(); // 最終アクティビティ更新
       const messagesToSave = data.items.map((item: any) => ({
         sessionId: videoId,
+        messageId: item.id, // YouTube のユニークメッセージID
         timestamp: new Date(item.snippet.publishedAt),
         authorName: item.authorDetails.displayName || '不明',
         message: item.snippet.displayMessage || ''
       })).filter((m: any) => m.message);
 
       if (messagesToSave.length > 0) {
-        await ChatMessage.insertMany(messagesToSave, { ordered: false }).catch(() => {});
-        messageCount += messagesToSave.length;
+        // 重複エラー (E11000) を無視して挿入
+        await ChatMessage.insertMany(messagesToSave, { ordered: false }).catch((err) => {
+          if (err.code !== 11000) console.error(`❌ DB保存エラー: ${err.message}`);
+        });
+        
+        // 累計カウントを正確にする（今回は厳密さよりパフォーマンス優先で増分を加算）
+        messageCount += messagesToSave.length; 
         console.log(`📡 [${new Date().toLocaleTimeString()}] +${messagesToSave.length} 件取得 (累計: ${messageCount} 件)`);
       }
     } else {
