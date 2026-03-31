@@ -93,11 +93,11 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
     if (!res.ok) {
       if (res.status === 403 || res.status === 404 || res.status >= 500) {
         retryCount++;
-        const waitSec = 30;
+        const waitSec = 60; // 30秒から60秒に延長（APIレート制限対策）
         console.warn(`⚠️ API警告 (${res.status}): 再接続を試みます (${retryCount}/${MAX_RETRIES}) ... ${waitSec}秒待機`);
         
         if (retryCount >= MAX_RETRIES) {
-          console.error(`❌ 最大リトライ回数に達しました。配信が終了したか、API制限の可能性があります。`);
+          console.error(`❌ 最大リトライ回数 (計30分) に達しました。配信終了とみなします。`);
           return finish('api_error_limit');
         }
         
@@ -138,8 +138,8 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
     pollTimeout = setTimeout(() => pollChat(liveChatId, key, data.nextPageToken), interval);
 
   } catch (err: any) {
-    console.error(`❌ 通信エラー (30秒後に再試行): ${err.message}`);
-    pollTimeout = setTimeout(() => pollChat(liveChatId, key, pageToken), 30000);
+    console.error(`❌ 通信エラー (60秒後に再試行): ${err.message}`);
+    pollTimeout = setTimeout(() => pollChat(liveChatId, key, pageToken), 60000);
   }
 }
 
