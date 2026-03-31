@@ -29,6 +29,8 @@ interface SessionStats {
 
 // ---------- 統計計算 ----------
 
+// ---------- 統計計算 ----------
+
 function computeStats(messages: IChatMessage[]): SessionStats {
   if (messages.length === 0) {
     return {
@@ -40,21 +42,47 @@ function computeStats(messages: IChatMessage[]): SessionStats {
     };
   }
 
-  // 毎分ごとのカウント集計
-  const minuteMap = new Map<string, number>();
+  // 1. 配信時間（開始〜終了）の特定
+  const firstMsg = messages[0];
+  const lastMsg = messages[messages.length - 1];
+  const startMs = new Date(firstMsg.timestamp).getTime();
+  const endMs = new Date(lastMsg.timestamp).getTime();
+  const totalDurationMs = endMs - startMs;
+  const totalMinutes = Math.max(1, Math.ceil(totalDurationMs / (60 * 1000)));
 
-  for (const msg of messages) {
-    const d = new Date(msg.timestamp);
-    const key = `${String(d.getHours()).padStart(2, '0')}:${String(
-      d.getMinutes()
-    ).padStart(2, '0')}`;
-    minuteMap.set(key, (minuteMap.get(key) || 0) + 1);
+  // 2. 最適な集計単位 (binSize) の決定
+  // グラフが 30〜40行程度に収まるように調整
+  let binSizeMin = 1;
+  if (totalMinutes > 300) binSizeMin = 15;      // 5時間超え
+  else if (totalMinutes > 120) binSizeMin = 10; // 2時間〜5時間
+  else if (totalMinutes > 40) binSizeMin = 5;   // 40分〜2時間
+  
+  const binMs = binSizeMin * 60 * 1000;
+
+  // 3. 全スロット（等間隔）の生成
+  const minuteStats: MinuteStats[] = [];
+  const startOfFirstBin = Math.floor(startMs / binMs) * binMs;
+  
+  for (let t = startOfFirstBin; t <= endMs; t += binMs) {
+    const d = new Date(t);
+    const dEnd = new Date(t + binMs - 1);
+    const timeLabel = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const endLabel = `${String(dEnd.getHours()).padStart(2, '0')}:${String(dEnd.getMinutes()).padStart(2, '0')}`;
+    
+    minuteStats.push({
+      time: `${timeLabel}-${endLabel}`,
+      count: 0
+    });
   }
 
-  // 時系列ソート
-  const minuteStats: MinuteStats[] = Array.from(minuteMap.entries())
-    .map(([time, count]) => ({ time, count }))
-    .sort((a, b) => a.time.localeCompare(b.time));
+  // 4. メッセージをスロットに振り分け
+  for (const msg of messages) {
+    const msgTs = new Date(msg.timestamp).getTime();
+    const binIndex = Math.floor((msgTs - startOfFirstBin) / binMs);
+    if (binIndex >= 0 && binIndex < minuteStats.length) {
+      minuteStats[binIndex].count++;
+    }
+  }
 
   // ピーク特定
   const peakMinute = minuteStats.reduce(
@@ -62,15 +90,11 @@ function computeStats(messages: IChatMessage[]): SessionStats {
     minuteStats[0]
   );
 
-  const durationMinutes = minuteStats.length;
-  const avgPerMinute =
-    durationMinutes > 0
-      ? Math.round(messages.length / durationMinutes)
-      : 0;
+  const avgPerMinute = Math.round(messages.length / totalMinutes);
 
   return {
     totalMessages: messages.length,
-    durationMinutes,
+    durationMinutes: totalMinutes,
     minuteStats,
     peakMinute,
     avgPerMinute,
@@ -81,7 +105,7 @@ function computeStats(messages: IChatMessage[]): SessionStats {
 
 function buildTextGraph(
   minuteStats: MinuteStats[],
-  maxBarWidth: number = 40
+  maxBarWidth: number = 30
 ): string[] {
   if (minuteStats.length === 0) return ['データなし'];
 
@@ -89,11 +113,12 @@ function buildTextGraph(
   const lines: string[] = [];
 
   for (const stat of minuteStats) {
-    const barLen =
-      maxCount > 0 ? Math.round((stat.count / maxCount) * maxBarWidth) : 0;
+    const barLen = maxCount > 0 ? Math.round((stat.count / maxCount) * maxBarWidth) : 0;
     const bar = '█'.repeat(barLen);
+    // 0件の場合は小さな点、ある場合はブロック
+    const displayBar = barLen > 0 ? bar : '·';
     lines.push(
-      `${stat.time} │${bar} ${stat.count}`
+      `${stat.time.padEnd(12)} │${displayBar} ${stat.count}`
     );
   }
 
