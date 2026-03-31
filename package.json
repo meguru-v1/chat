@@ -2,25 +2,25 @@
   "name": "youtube-chat-archiver",
   "version": "1.0.0",
   "description": "YouTube Live Chat Smart-Archiver — チャット記録 & 統計PDF生成",
-  "main": "dist/app.js",
   "scripts": {
     "build": "tsc",
-    "dev": "ts-node src/app.ts",
-    "start": "node dist/app.js",
+    "record": "ts-node src/standalone-recorder.ts",
     "download-font": "ts-node src/utils/fontDownloader.ts"
   },
-  "keywords": ["youtube", "live-chat", "archiver", "pdf"],
+  "keywords": [
+    "youtube",
+    "live-chat",
+    "archiver",
+    "pdf"
+  ],
   "license": "MIT",
   "dependencies": {
-    "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2",
     "mongoose": "^8.10.1",
-    "pdfkit": "^0.15.1"
+    "pdfkit": "^0.15.1",
+    "youtube-chat": "^2.2.0"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.0",
     "@types/node": "^22.13.10",
     "@types/pdfkit": "^0.13.8",
     "ts-node": "^10.9.2",
