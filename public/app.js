@@ -1,10 +1,4 @@
-console.log('🚀 Smart-Archiver v1.2 Initialized');
-let API_BASE = '/api';
-
-// GitHub Pages等のリモート環境からローカルサーバーに接続するための設定（ローカルモードの場合）
-if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-  API_BASE = 'http://localhost:3000/api';
-}
+console.log('🚀 Smart-Archiver v2.0 (Pure Actions Mode)');
 
 // ---------------------------
 // DOM Elements
@@ -15,46 +9,34 @@ const submitBtn = document.getElementById('submitBtn');
 const activeList = document.getElementById('activeSessionsList');
 const historyList = document.getElementById('historySessionsList');
 const toast = document.getElementById('toast');
+const connectionStatus = document.getElementById('connectionStatus');
 
-// クラウド設定関連
-const btnOpenCloudConfig = document.getElementById('btnOpenCloudConfig');
-const cloudConfigModal = document.getElementById('cloudConfigModal');
-const btnCancelConfig = document.getElementById('btnCancelConfig');
+// 設定関連 (Footer)
 const btnSaveConfig = document.getElementById('btnSaveConfig');
 const ghRepoInput = document.getElementById('ghRepo');
 const ghTokenInput = document.getElementById('ghToken');
 
 // ---------------------------
-// クラウドモードの状態管理
+// 状態管理 (GitHub 連携のみ)
 // ---------------------------
-let isCloudMode = false;
 let githubRepo = localStorage.getItem('ghRepo') || '';
 let githubToken = localStorage.getItem('ghToken') || '';
 
-function checkCloudMode() {
+// 初期表示用
+ghRepoInput.value = githubRepo;
+ghTokenInput.value = githubToken;
+
+function updateConnectionStatus() {
   if (githubRepo && githubToken) {
-    isCloudMode = true;
-    btnOpenCloudConfig.innerHTML = '<i class="fas fa-cloud" style="color:var(--primary-color)"></i> クラウドモード (ON)';
-    btnOpenCloudConfig.style.borderColor = 'var(--primary-color)';
+    connectionStatus.innerHTML = `<span style="color:var(--primary-color)"><i class="fas fa-check-circle"></i> 連携中: ${githubRepo}</span>`;
   } else {
-    isCloudMode = false;
-    btnOpenCloudConfig.innerHTML = '<i class="fas fa-cloud"></i> クラウド設定';
-    btnOpenCloudConfig.style.borderColor = '';
+    connectionStatus.innerHTML = `<span style="color:var(--danger-color)"><i class="fas fa-exclamation-triangle"></i> 設定未完了</span>`;
   }
 }
 
-// 初期判定
-checkCloudMode();
+updateConnectionStatus();
 
-// 設定モーダルの開閉
-btnOpenCloudConfig.addEventListener('click', () => {
-  ghRepoInput.value = githubRepo;
-  ghTokenInput.value = githubToken;
-  cloudConfigModal.style.display = 'block';
-});
-btnCancelConfig.addEventListener('click', () => {
-  cloudConfigModal.style.display = 'none';
-});
+// 設定保存
 btnSaveConfig.addEventListener('click', () => {
   githubRepo = ghRepoInput.value.trim();
   githubToken = ghTokenInput.value.trim();
@@ -62,16 +44,15 @@ btnSaveConfig.addEventListener('click', () => {
   if (githubRepo && githubToken) {
     localStorage.setItem('ghRepo', githubRepo);
     localStorage.setItem('ghToken', githubToken);
-    showToast('クラウドモードを有効化しました');
+    showToast('GitHub 連携設定を保存しました');
   } else {
     localStorage.removeItem('ghRepo');
     localStorage.removeItem('ghToken');
-    showToast('ローカルモードに戻りました');
+    showToast('設定をクリアしました', 'error');
   }
   
-  cloudConfigModal.style.display = 'none';
-  checkCloudMode();
-  loadStatus(); // 新しいモードで更新
+  updateConnectionStatus();
+  loadStatus();
 });
 
 // ---------------------------
@@ -94,7 +75,7 @@ function formatDate(dateStr) {
   });
 }
 
-/** セッションリストの要素を構築する */
+/** Actions の実行履歴から要素を構築 */
 function createSessionElement(session, displayState) {
   const li = document.createElement('li');
   li.className = 'session-item';
@@ -103,184 +84,83 @@ function createSessionElement(session, displayState) {
   let metaHtml = '';
   let actionHtml = '';
 
-  // 表示モード (local vs cloud)
-  const isCloud = !!session.githubRunId;
-  const cloudBadge = isCloud ? `<span class="badge cloud" title="クラウド環境で実行中"><i class="fas fa-cloud"></i> CLOUD</span> ` : '';
+  const cloudBadge = `<span class="badge cloud" title="GitHub Actions"><i class="fas fa-cloud"></i> ACTIONS</span> `;
 
   if (displayState === 'recording') {
-    badgeHtml = `${cloudBadge}<div class="badge recording"><i class="fas fa-circle"></i> RECORDING</div>`;
+    badgeHtml = `${cloudBadge}<div class="badge recording"><i class="fas fa-circle"></i> EXECUTING</div>`;
     metaHtml = `
-      <span title="開始時刻"><i class="far fa-clock"></i> ${formatDate(session.startedAt || session.startTime)}</span>
-      <span title="ステータス"><i class="fas fa-bolt"></i> アクティブ</span>
+      <span title="開始時刻"><i class="far fa-clock"></i> ${formatDate(session.startedAt)}</span>
     `;
-    actionHtml = isCloud ? `
-      <button class="btn-danger" onclick="stopCloudRecording('${session.githubRunId}')" title="GitHub Actionsを強制終了">
-        <i class="fas fa-stop"></i> 停止
-      </button>
-    ` : `
-      <button class="btn-danger" onclick="stopRecording('${session.videoId}')">
+    actionHtml = `
+      <button class="btn-danger" onclick="stopActionsRun('${session.githubRunId}')" title="GitHub Actionsを停止">
         <i class="fas fa-stop"></i> 停止
       </button>
     `;
   } else if (displayState === 'error') {
-    badgeHtml = `${cloudBadge}<div class="badge error"><i class="fas fa-exclamation-triangle"></i> ERROR</div>`;
+    badgeHtml = `${cloudBadge}<div class="badge error"><i class="fas fa-exclamation-triangle"></i> FAILED</div>`;
     metaHtml = `
-      <span title="エラー原因" style="color:var(--danger-color)"><i class="fas fa-times-circle"></i> 録画失敗</span>
+      <span style="color:var(--danger-color)"><i class="fas fa-times-circle"></i> 実行失敗</span>
     `;
-    actionHtml = isCloud ? `
+    actionHtml = `
       <button class="btn-secondary" style="font-size:0.8rem; padding: 0.5rem;" onclick="window.open('${session.htmlUrl}', '_blank')">
-        <i class="fab fa-github"></i> ログ確認
+        <i class="fab fa-github"></i> ログ
       </button>
-    ` : ``;
+    `;
   } else {
-    // completed
-    badgeHtml = `${cloudBadge}<div class="badge completed"><i class="fas fa-check"></i> COMPLETED</div>`;
+    badgeHtml = `${cloudBadge}<div class="badge completed"><i class="fas fa-check"></i> SUCCESS</div>`;
     metaHtml = `
       <span title="終了時刻"><i class="far fa-clock"></i> ${formatDate(session.finishedAt)}</span>
     `;
-    
-    if (isCloud) {
-       actionHtml = `
-        <button class="btn-download" onclick="downloadCloudArtifact('${session.githubRunId}', this)" title="1日限定・ZIPダウンロード">
-          <i class="fas fa-file-pdf"></i> PDF(ZIP)をダウンロード
-        </button>
-      `;
-    } else {
-      actionHtml = `
-        <button class="btn-download" onclick="window.open('${API_BASE}/sessions/${session.sessionId}/pdf', '_blank')">
-          <i class="fas fa-file-pdf"></i> PDFをDL
-        </button>
-      `;
-    }
+    actionHtml = `
+      <button class="btn-download" onclick="downloadArtifact('${session.githubRunId}', this)" title="PDF(ZIP)ダウンロード">
+        <i class="fas fa-file-pdf"></i> レポート(ZIP)
+      </button>
+    `;
   }
 
-  // HTMLの組み立て
-  // ※ ${...}のネストが壊れないように分割して組み立てます
-  const infoHtml = `
+  li.innerHTML = `
     <div class="session-info">
       <div class="session-id">
-        ${session.videoId || session.sessionId || session.name || '不明'} 
+        ${session.videoId || '不明なセッション'} 
         ${badgeHtml}
       </div>
       <div class="session-meta">
         ${metaHtml}
       </div>
     </div>
-  `;
-  const btnHtml = `
     <div class="session-action">
       ${actionHtml}
     </div>
   `;
-
-  li.innerHTML = infoHtml + btnHtml;
   return li;
 }
 
 // ---------------------------
-// ローカルモード用 API Call
-// ---------------------------
-async function loadLocalStatus() {
-  try {
-    const actRes = await fetch(`${API_BASE}/record/status`);
-    const actData = await actRes.json();
-    
-    activeList.innerHTML = '';
-    let hasActive = false;
-
-    if (actData.sessions && actData.sessions.length > 0) {
-      actData.sessions.forEach(s => {
-        if (s.status === 'recording' || s.status === 'stopping') {
-          activeList.appendChild(createSessionElement(s, s.status));
-          hasActive = true;
-        } else if (s.status === 'finished' && (s.messageCount === 0 || s.finishReason === 'process_error')) {
-          activeList.appendChild(createSessionElement(s, 'error'));
-          hasActive = true;
-        }
-      });
-    }
-
-    if (!hasActive) {
-      activeList.innerHTML = '<div class="empty-state">現在アクティブなセッションはありません</div>';
-    }
-
-    const histRes = await fetch(`${API_BASE}/sessions`);
-    const histData = await histRes.json();
-
-    if (histData.sessions && histData.sessions.length > 0) {
-      historyList.innerHTML = '';
-      histData.sessions.forEach(s => {
-        historyList.appendChild(createSessionElement(s, 'completed'));
-      });
-    } else {
-      historyList.innerHTML = '<div class="empty-state">保存されたセッションはありません</div>';
-    }
-  } catch (err) {
-    if (!isCloudMode) activeList.innerHTML = '<div class="empty-state" style="color:var(--danger-color)"><i class="fas fa-unlink"></i> ローカルサーバーに接続できません (ターミナルが起動していない可能性があります)</div>';
-  }
-}
-
-async function startLocalRecording(videoId) {
-  const res = await fetch(`${API_BASE}/record/start`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ videoId })
-  });
-  const data = await res.json();
-  if (res.ok) {
-    showToast(`録画を開始しました: ${videoId}`);
-  } else {
-    showToast(data.error || 'エラーが発生しました', 'error');
-  }
-}
-
-async function stopRecording(videoId) {
-  if (!confirm(`${videoId} の録画を停止しますか？`)) return;
-  try {
-    const res = await fetch(`${API_BASE}/record/stop`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId })
-    });
-    const data = await res.json();
-    if (res.ok) {
-      showToast(`${videoId} の録画を停止しました`);
-      setTimeout(loadStatus, 1500);
-    } else {
-      showToast(data.error || '停止に失敗しました', 'error');
-    }
-  } catch (err) {
-    showToast('通信エラーが発生しました', 'error');
-  }
-}
-
-// ---------------------------
-// クラウドモード用 API Call (GitHub API)
+// GitHub API 通信
 // ---------------------------
 const githubApiHeaders = () => ({
   'Authorization': `token ${githubToken}`,
   'Accept': 'application/vnd.github.v3+json'
 });
 
-async function loadCloudStatus() {
+async function loadStatus() {
+  if (!githubRepo || !githubToken) {
+    activeList.innerHTML = '<div class="empty-state">GitHub 連携設定が必要です (画面下部)</div>';
+    historyList.innerHTML = '<div class="empty-state">設定を完了すると Actions の履歴が表示されます</div>';
+    return;
+  }
+
   try {
     const url = `https://api.github.com/repos/${githubRepo}/actions/runs?per_page=15`;
     const res = await fetch(url, { headers: githubApiHeaders() });
-    if (!res.ok) {
-      if (res.status === 401) throw new Error('トークンが無効です');
-      if (res.status === 404) throw new Error('リポジトリが見つかりません');
-      throw new Error('API取得エラー');
-    }
+    
+    if (!res.ok) throw new Error(`API取得失敗: ${res.status}`);
     const data = await res.json();
     
-    // アプリの録画に関するワークフローを抽出（フィルタリングを柔軟に）
+    // 録画に関連するワークフローを抽出
     const recordRuns = data.workflow_runs.filter(w => {
-      const titleMatch = w.display_title && (w.display_title.includes('📺') || w.display_title.includes('録画'));
-      const flowMatch = w.name && (w.name.includes('録画') || w.name.includes('YouTube'));
-      return titleMatch || flowMatch;
+      return w.name && (w.name.includes('録画') || w.name.includes('YouTube') || w.path.includes('record.yml'));
     });
-
-    console.log(`🔍 [Debug] 取得した全${data.workflow_runs.length}件中、録画に関係しそうなのは${recordRuns.length}件でした。`);
 
     activeList.innerHTML = '';
     historyList.innerHTML = '';
@@ -288,11 +168,9 @@ async function loadCloudStatus() {
     let hasHistory = false;
 
     recordRuns.forEach(run => {
-      // sessionぽい形式に適当にマッピングする
       const s = {
         githubRunId: run.id,
-        // display_title (run-name) があればそれを使い、なければ run_number を動画IDとして表示
-        videoId: run.display_title || (run.name + ` (#${run.run_number})`), 
+        videoId: run.display_title || `Session #${run.run_number}`, 
         status: run.status,
         startedAt: run.created_at,
         finishedAt: run.updated_at,
@@ -303,11 +181,9 @@ async function loadCloudStatus() {
         activeList.appendChild(createSessionElement(s, 'recording'));
         hasActive = true;
       } else {
-        // completed
         if (run.conclusion === 'success') {
           historyList.appendChild(createSessionElement(s, 'completed'));
         } else {
-          // failure or cancelled
           activeList.appendChild(createSessionElement(s, 'error'));
           hasActive = true;
         }
@@ -315,39 +191,37 @@ async function loadCloudStatus() {
       }
     });
 
-    if (!hasActive) activeList.innerHTML = '<div class="empty-state">現在アクティブなクラウドセッションはありません</div>';
-    if (!hasHistory) historyList.innerHTML = '<div class="empty-state">保存されたクラウドセッションはありません</div>';
+    if (!hasActive) activeList.innerHTML = '<div class="empty-state">実行中のタスクはありません</div>';
+    if (!hasHistory) historyList.innerHTML = '<div class="empty-state">完了した履歴はありません</div>';
 
   } catch (err) {
-    activeList.innerHTML = `<div class="empty-state" style="color:var(--danger-color)"><i class="fas fa-exclamation-triangle"></i> クラウド通信エラー: ${err.message}</div>`;
+    activeList.innerHTML = `<div class="empty-state" style="color:var(--danger-color)"><i class="fas fa-exclamation-triangle"></i> 通信エラー: ${err.message}</div>`;
   }
 }
 
-async function startCloudRecording(videoId) {
+async function startRecording(e) {
+  e.preventDefault();
+  const videoId = videoIdInput.value.trim();
+  if (!videoId) return;
+
+  if (!githubRepo || !githubToken) {
+    showToast('先に GitHub 連携設定を完了してください', 'error');
+    return;
+  }
+
+  const originalText = submitBtn.innerHTML;
+  submitBtn.innerHTML = '<div class="loader"></div> 通信中...';
+  submitBtn.disabled = true;
+
   try {
-    // 1. リポジトリ名の形式チェック
-    if (!githubRepo.includes('/')) {
-      throw new Error('リポジトリ名は "ユーザー名/リポジトリ名" の形式で入力してください');
-    }
-
-    showToast('クラウド情報を確認中...', 'success');
-
-    // 2. リポジトリ情報を取得してデフォルトブランチを特定
-    const repoUrl = `https://api.github.com/repos/${githubRepo}`;
-    const repoRes = await fetch(repoUrl, { headers: githubApiHeaders() });
-    
-    if (!repoRes.ok) {
-      if (repoRes.status === 404) throw new Error('リポジトリが見つかりません。名前を確認してください。');
-      if (repoRes.status === 401) throw new Error('トークンが無効です。GitHub設定を確認してください。');
-      throw new Error('リポジトリ情報の取得に失敗しました');
-    }
-    
+    // リポジトリ情報を取得してデフォルトブランチを特定
+    const repoRes = await fetch(`https://api.github.com/repos/${githubRepo}`, { headers: githubApiHeaders() });
+    if (!repoRes.ok) throw new Error('リポジトリにアクセスできません');
     const repoData = await repoRes.json();
     const defaultBranch = repoData.default_branch || 'main';
 
-    // 3. 録画命令（workflow_dispatch）を送信
-    const dispatchUrl = `https://api.github.com/repos/${githubRepo}/actions/workflows/record.yml/dispatches`;
-    const res = await fetch(dispatchUrl, {
+    // 録画命令（workflow_dispatch）を送信
+    const res = await fetch(`https://api.github.com/repos/${githubRepo}/actions/workflows/record.yml/dispatches`, {
       method: 'POST',
       headers: githubApiHeaders(),
       body: JSON.stringify({
@@ -357,54 +231,46 @@ async function startCloudRecording(videoId) {
     });
 
     if (res.ok || res.status === 204) {
-      showToast(`クラウド上で ${videoId} の録画命令を送信しました (${defaultBranch})`);
+      showToast(`GitHub Actions サーバーを起動しました: ${videoId}`);
     } else {
-      const d = await res.json().catch(()=>({}));
-      // GitHubからの詳細なメッセージを表示（例: "Workflow does not have 'workflow_dispatch' trigger" 等）
-      const errorMsg = d.message || `エラー: ${res.status}`;
-      throw new Error(`GitHubからの拒否: ${errorMsg}`);
+      throw new Error(`起動失敗: ${res.status}`);
     }
   } catch (err) {
     showToast(err.message, 'error');
-    console.error('Cloud Start Error:', err);
+  } finally {
+    videoIdInput.value = '';
+    submitBtn.innerHTML = originalText;
+    submitBtn.disabled = false;
+    setTimeout(loadStatus, 2000);
   }
 }
 
-async function downloadCloudArtifact(runId, btn) {
+async function downloadArtifact(runId, btn) {
   const originalText = btn.innerHTML;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 準備中...';
   btn.disabled = true;
 
   try {
-    // 1. その実行(Run)に紐づく成果物一覧を取得
-    const listUrl = `https://api.github.com/repos/${githubRepo}/actions/runs/${runId}/artifacts`;
-    const listRes = await fetch(listUrl, { headers: githubApiHeaders() });
+    const listRes = await fetch(`https://api.github.com/repos/${githubRepo}/actions/runs/${runId}/artifacts`, { headers: githubApiHeaders() });
     const listData = await listRes.json();
 
     if (!listData.artifacts || listData.artifacts.length === 0) {
-      throw new Error('PDFがまだ生成されていないか、1日の保存期限を過ぎています。');
+      throw new Error('レポートがまだ生成されていないか、期限を過ぎています');
     }
 
-    // 2. 最初の成果物をダウンロードするためのURL(ZIP)を取得
     const artifactId = listData.artifacts[0].id;
-    const downloadUrl = `https://api.github.com/repos/${githubRepo}/actions/artifacts/${artifactId}/zip`;
-    
-    // APIはリダイレクトを返すが、ブラウザの window.open では Authorization ヘッダーを送れないため、
-    // 一度 fetch でリダイレクト先の「署名付きS3 URL」を取得してから、そこにジャンプする。
-    const res = await fetch(downloadUrl, { 
+    const res = await fetch(`https://api.github.com/repos/${githubRepo}/actions/artifacts/${artifactId}/zip`, { 
       headers: githubApiHeaders(),
-      redirect: 'follow' // 自動でリダイレクト先を追跡
+      redirect: 'follow'
     });
 
     if (res.ok) {
-      // res.url が Amazon S3 等の署名付き直リンクになっている
       window.location.href = res.url;
-      showToast('ダウンロードを開始しました(ZIP形式)');
+      showToast('ダウンロードを開始しました');
     } else {
-      throw new Error('URLの取得に失敗しました。');
+      throw new Error('URL 取得失敗');
     }
   } catch (err) {
-    console.error('Download Error:', err);
     showToast(err.message, 'error');
   } finally {
     btn.innerHTML = originalText;
@@ -412,14 +278,15 @@ async function downloadCloudArtifact(runId, btn) {
   }
 }
 
-async function stopCloudRecording(runId) {
-  if (!confirm(`クラウド上の録画プロセス(ID: ${runId})を強制終了しますか？`)) return;
-  const url = `https://api.github.com/repos/${githubRepo}/actions/runs/${runId}/cancel`;
-  
+async function stopActionsRun(runId) {
+  if (!confirm(`このアクション(ID: ${runId})を停止しますか？`)) return;
   try {
-    const res = await fetch(url, { method: 'POST', headers: githubApiHeaders() });
+    const res = await fetch(`https://api.github.com/repos/${githubRepo}/actions/runs/${runId}/cancel`, { 
+      method: 'POST', 
+      headers: githubApiHeaders() 
+    });
     if (res.ok || res.status === 202) {
-      showToast(`クラウドプロセスの強制終了を要求しました`);
+      showToast(`停止要求を送信しました`);
       setTimeout(loadStatus, 2000);
     } else {
       showToast('停止に失敗しました', 'error');
@@ -430,43 +297,9 @@ async function stopCloudRecording(runId) {
 }
 
 // ---------------------------
-// ユニバーサル (Main)
+// イベント登録
 // ---------------------------
-async function loadStatus() {
-  if (isCloudMode) {
-    // クラウドモード時はローカルサーバー(localhost:3000)への通信をスキップ
-    await loadCloudStatus();
-  } else {
-    // ローカルモード時のみ実行
-    await loadLocalStatus();
-  }
-}
-
-async function startRecording(e) {
-  e.preventDefault();
-  const videoId = videoIdInput.value.trim();
-  if (!videoId) return;
-
-  const originalText = submitBtn.innerHTML;
-  submitBtn.innerHTML = '<div class="loader"></div> 処理中...';
-  submitBtn.disabled = true;
-
-  try {
-    if (isCloudMode) {
-      await startCloudRecording(videoId);
-    } else {
-      await startLocalRecording(videoId);
-    }
-  } finally {
-    videoIdInput.value = '';
-    submitBtn.innerHTML = originalText;
-    submitBtn.disabled = false;
-    setTimeout(loadStatus, 1500); // 処理が開始されるまで少し待つ
-  }
-}
-
-// 初期セパレーター
 form.addEventListener('submit', startRecording);
 loadStatus();
-// 10秒おきにステータスを自動更新 (ActionsのAPIリミットを考慮して10秒に延長)
-setInterval(loadStatus, 10000);
+// 15秒おきに自動更新
+setInterval(loadStatus, 15000);
