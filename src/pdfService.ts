@@ -9,8 +9,16 @@
  */
 import PDFDocument from 'pdfkit';
 import path from 'path';
-import { ChatMessage, IChatMessage } from './models/ChatMessage';
 import { ensureFont } from './utils/fontDownloader';
+
+// ---------- 型定義 ----------
+export interface IChatMessage {
+  sessionId: string;
+  messageId: string;
+  timestamp: Date | string;
+  authorName: string;
+  message: string;
+}
 
 // ---------- 型定義 ----------
 interface MinuteStats {
@@ -139,16 +147,11 @@ function buildTextGraph(
 
 // ---------- PDF 生成 ----------
 
-export async function generatePdf(sessionId: string): Promise<Buffer> {
+export async function generatePdf(sessionId: string, messages: IChatMessage[]): Promise<Buffer> {
   // フォント準備
   const fontPath = await ensureFont();
 
-  // メッセージ取得（時系列順）
-  const messages = await ChatMessage.find({ sessionId })
-    .sort({ timestamp: 1 })
-    .lean<IChatMessage[]>();
-
-  const stats = computeStats(messages as IChatMessage[]);
+  const stats = computeStats(messages);
   const graphLines = buildTextGraph(stats.minuteStats);
 
   // PDF 生成

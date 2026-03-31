@@ -76,15 +76,15 @@ function formatDate(dateStr) {
 }
 
 /** Actions の実行履歴から要素を構築 */
+/** セッション要素の構築 (Action実行中 & 保存済み履歴の両方に対応) */
 function createSessionElement(session, displayState) {
   const li = document.createElement('li');
   li.className = 'session-item';
 
+  const cloudBadge = `<span class="badge cloud" title="GitHub Actions"><i class="fas fa-cloud"></i> ACTIONS</span> `;
   let badgeHtml = '';
   let metaHtml = '';
   let actionHtml = '';
-
-  const cloudBadge = `<span class="badge cloud" title="GitHub Actions"><i class="fas fa-cloud"></i> ACTIONS</span> `;
 
   if (displayState === 'recording') {
     badgeHtml = `${cloudBadge}<div class="badge recording"><i class="fas fa-circle"></i> EXECUTING</div>`;
@@ -96,32 +96,24 @@ function createSessionElement(session, displayState) {
         <i class="fas fa-stop"></i> 停止
       </button>
     `;
-  } else if (displayState === 'error') {
-    badgeHtml = `${cloudBadge}<div class="badge error"><i class="fas fa-exclamation-triangle"></i> FAILED</div>`;
-    metaHtml = `
-      <span style="color:var(--danger-color)"><i class="fas fa-times-circle"></i> 実行失敗</span>
-    `;
-    actionHtml = `
-      <button class="btn-secondary" style="font-size:0.8rem; padding: 0.5rem;" onclick="window.open('${session.htmlUrl}', '_blank')">
-        <i class="fab fa-github"></i> ログ
-      </button>
-    `;
   } else {
-    badgeHtml = `${cloudBadge}<div class="badge completed"><i class="fas fa-check"></i> SUCCESS</div>`;
+    badgeHtml = `${cloudBadge}<div class="badge success"><i class="fas fa-check-circle"></i> FINISHED</div>`;
     metaHtml = `
-      <span title="終了時刻"><i class="far fa-clock"></i> ${formatDate(session.finishedAt)}</span>
+      <span><i class="fab fa-youtube"></i> ${session.videoId}</span>
+      <span><i class="far fa-calendar-alt"></i> ${formatDate(session.date)}</span>
+      <span><i class="far fa-comments"></i> ${session.messageCount}件</span>
     `;
     actionHtml = `
-      <button class="btn-download" onclick="downloadArtifact('${session.githubRunId}', this)" title="PDF(ZIP)ダウンロード">
-        <i class="fas fa-file-pdf"></i> レポート(ZIP)
-      </button>
+      <a href="${session.pdfPath}" target="_blank" class="btn-primary" style="text-decoration:none; display:inline-block; padding:8px 12px; border-radius:6px; font-size:13px">
+        <i class="fas fa-file-pdf"></i> レポート表示
+      </a>
     `;
   }
 
   li.innerHTML = `
     <div class="session-info">
       <div class="session-id">
-        ${session.videoId || '不明なセッション'} 
+        ${session.videoId === '実行中...' ? '監視中/録画中' : (session.title || session.videoId)} 
         ${badgeHtml}
       </div>
       <div class="session-meta">
@@ -151,51 +143,49 @@ async function loadStatus() {
   }
 
   try {
-    const url = `https://api.github.com/repos/${githubRepo}/actions/runs?per_page=15`;
+    // 1. GitHub Actions の実行状況を取得
+    const url = `https://api.github.com/repos/${githubRepo}/actions/runs?per_page=10`;
     const res = await fetch(url, { headers: githubApiHeaders() });
-    
-    if (!res.ok) throw new Error(`API取得失敗: ${res.status}`);
     const data = await res.json();
-    
-    // 録画に関連するワークフローを抽出
-    const recordRuns = data.workflow_runs.filter(w => {
-      return w.name && (w.name.includes('録画') || w.name.includes('YouTube') || w.path.includes('record.yml'));
-    });
+    const runs = data.workflow_runs || [];
+
+    // 2. 保存済みセッション履歴 (Sessions.json) を取得
+    // 相対パスでリポジトリ上のファイルにアクセス
+    const resSessions = await fetch('sessions.json?t=' + Date.now());
+    let savedSessions = [];
+    if (resSessions.ok) {
+      savedSessions = await resSessions.json();
+    }
 
     activeList.innerHTML = '';
     historyList.innerHTML = '';
-    let hasActive = false;
-    let hasHistory = false;
 
-    recordRuns.forEach(run => {
-      const s = {
+    // 進行中の Action を表示
+    const activeRuns = runs.filter(r => r.status === 'in_progress' || r.status === 'queued');
+    activeRuns.forEach(run => {
+      activeList.appendChild(createSessionElement({
         githubRunId: run.id,
-        videoId: run.display_title || `Session #${run.run_number}`, 
-        status: run.status,
-        startedAt: run.created_at,
-        finishedAt: run.updated_at,
-        htmlUrl: run.html_url
-      };
-
-      if (run.status === 'in_progress' || run.status === 'queued') {
-        activeList.appendChild(createSessionElement(s, 'recording'));
-        hasActive = true;
-      } else {
-        if (run.conclusion === 'success') {
-          historyList.appendChild(createSessionElement(s, 'completed'));
-        } else {
-          activeList.appendChild(createSessionElement(s, 'error'));
-          hasActive = true;
-        }
-        hasHistory = true;
-      }
+        videoId: '実行中...',
+        startedAt: run.created_at
+      }, 'recording'));
     });
 
-    if (!hasActive) activeList.innerHTML = '<div class="empty-state">実行中のタスクはありません</div>';
-    if (!hasHistory) historyList.innerHTML = '<div class="empty-state">完了した履歴はありません</div>';
+    if (activeRuns.length === 0) {
+      activeList.innerHTML = '<li class="empty-msg">現在実行中の自動監視/録画はありません</li>';
+    }
+
+    // 保存済み履歴を表示
+    savedSessions.forEach(session => {
+      historyList.appendChild(createSessionElement(session, 'finished'));
+    });
+
+    if (savedSessions.length === 0) {
+      historyList.innerHTML = '<li class="empty-msg">過去の記録レポートはありません</li>';
+    }
 
   } catch (err) {
-    activeList.innerHTML = `<div class="empty-state" style="color:var(--danger-color)"><i class="fas fa-exclamation-triangle"></i> 通信エラー: ${err.message}</div>`;
+    console.error('Failed to load status:', err);
+    activeList.innerHTML = `<div class="empty-state" style="color:var(--danger-color)">ステータス取得エラー: ${err.message}</div>`;
   }
 }
 
@@ -245,38 +235,7 @@ async function startRecording(e) {
   }
 }
 
-async function downloadArtifact(runId, btn) {
-  const originalText = btn.innerHTML;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 準備中...';
-  btn.disabled = true;
-
-  try {
-    const listRes = await fetch(`https://api.github.com/repos/${githubRepo}/actions/runs/${runId}/artifacts`, { headers: githubApiHeaders() });
-    const listData = await listRes.json();
-
-    if (!listData.artifacts || listData.artifacts.length === 0) {
-      throw new Error('レポートがまだ生成されていないか、期限を過ぎています');
-    }
-
-    const artifactId = listData.artifacts[0].id;
-    const res = await fetch(`https://api.github.com/repos/${githubRepo}/actions/artifacts/${artifactId}/zip`, { 
-      headers: githubApiHeaders(),
-      redirect: 'follow'
-    });
-
-    if (res.ok) {
-      window.location.href = res.url;
-      showToast('ダウンロードを開始しました');
-    } else {
-      throw new Error('URL 取得失敗');
-    }
-  } catch (err) {
-    showToast(err.message, 'error');
-  } finally {
-    btn.innerHTML = originalText;
-    btn.disabled = false;
-  }
-}
+// アーティファクトダウンロード機能は PDF 直リンクに置き換えたため削除
 
 async function stopActionsRun(runId) {
   if (!confirm(`このアクション(ID: ${runId})を停止しますか？`)) return;
