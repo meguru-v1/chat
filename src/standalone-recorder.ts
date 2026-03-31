@@ -38,9 +38,17 @@ let pollTimeout: NodeJS.Timeout | null = null;
 const startTime = Date.now();
 const maxWaitMs = timeoutMinutes * 60 * 1000;
 
+// ---------- グローバルエラーハンドリング ----------
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ 未ハンドルの拒絶が発生しました:', reason);
+  // 致命的な場合は終了
+  if (!isStopping) finish('unhandled_rejection');
+});
+
 // ---------- YouTube API 機能 ----------
 
 async function getActiveLiveChatId(vid: string, key: string): Promise<string> {
+  console.log(`🔍 [API] liveChatId を取得中... (Video: ${vid})`);
   const url = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${vid}&key=${key}`;
   const res = await fetch(url);
   if (!res.ok) {
@@ -50,7 +58,8 @@ async function getActiveLiveChatId(vid: string, key: string): Promise<string> {
   const data = (await res.json()) as any;
   if (!data.items || data.items.length === 0) throw new Error('動画が存在しないか、非公開です');
   const details = data.items[0].liveStreamingDetails;
-  if (!details || !details.activeLiveChatId) throw new Error('有効なライブチャットが見つかりません');
+  if (!details || !details.activeLiveChatId) throw new Error('有効なライブチャットが見つかりません (ライブ配信中ですか？)');
+  console.log(`✅ [API] liveChatId 取得成功: ${details.activeLiveChatId}`);
   return details.activeLiveChatId;
 }
 
@@ -110,7 +119,8 @@ async function finish(reason: string) {
   isStopping = true;
   if (pollTimeout) clearTimeout(pollTimeout);
 
-  console.log(`🏁 録画フェーズ完了 (理由: ${reason}) / PDF生成を開始します...`);
+  console.log(`🏁 録画フェーズ完了 (理由: ${reason}) / 保存件数: ${messageCount} 件`);
+  console.log(`📄 PDF生成を開始します... (Video: ${videoId})`);
 
   try {
     const outputDir = path.resolve(process.cwd(), 'output');
@@ -120,11 +130,14 @@ async function finish(reason: string) {
     const pdfPath = path.join(outputDir, `chat-report-${videoId}.pdf`);
     fs.writeFileSync(pdfPath, pdfBuffer);
 
-    console.log(`✅ レポート生成完了: ${pdfPath}`);
+    console.log(`✅ レポート生成成功: ${pdfPath}`);
   } catch (err: any) {
     console.error(`❌ PDF生成エラー: ${err.message}`);
   } finally {
-    await mongoose.disconnect();
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+      console.log('🔌 MongoDB 切断完了');
+    }
     console.log('🚪 プロセスを終了します');
     process.exit(0);
   }
@@ -133,32 +146,38 @@ async function finish(reason: string) {
 // ---------- メイン実行 ----------
 
 async function main() {
-  console.log(`🚀 スタンドアロン録画開始: ${videoId} (上限: ${timeoutMinutes}分)`);
+  console.log('--- YouTube Chat Standalone Recorder ---');
+  console.log(`🎯 Target: ${videoId}`);
+  console.log(`⏳ Timeout: ${timeoutMinutes} min`);
   
   if (!apiKey || apiKey === 'your_api_key_here') {
-    console.error('❌ YOUTUBE_API_KEY が設定されていません');
+    console.error('❌ YOUTUBE_API_KEY が未設定です。GitHub Secretsを確認してください。');
     process.exit(1);
     return;
   }
 
-  // ここからは apiKey は確実に string
   const validApiKey = apiKey!;
 
-  await mongoose.connect(mongoUri);
-  console.log('🔌 MongoDB 接続完了');
+  try {
+    console.log(`🔌 MongoDB に接続中... (${mongoUri.replace(/:([^:@]+)@/, ':***@')})`);
+    await mongoose.connect(mongoUri, {
+      serverSelectionTimeoutMS: 5000,
+    });
+    console.log('✅ MongoDB 接続成功');
 
-  const liveChatId = await getActiveLiveChatId(videoId, validApiKey);
-  console.log(`📡 録画ループへ突入 (liveChatId: ${liveChatId})`);
-  
-  // シグナルハンドリング (Actionsの強制終了対策)
-  process.on('SIGINT', () => finish('manual_stop'));
-  process.on('SIGTERM', () => finish('manual_stop'));
+    const liveChatId = await getActiveLiveChatId(videoId, validApiKey);
+    console.log(`🚀 録画メインループを開始します`);
+    
+    // シグナルハンドリング
+    process.on('SIGINT', () => finish('manual_stop'));
+    process.on('SIGTERM', () => finish('manual_stop'));
 
-  pollChat(liveChatId, validApiKey);
+    pollChat(liveChatId, validApiKey);
+  } catch (err: any) {
+    console.error(`❌ 起動フェーズで致命的エラーが発生しました: ${err.message}`);
+    process.exit(1);
+  }
 }
 
-main().catch(err => {
-  console.error(`❌ 致命的エラー: ${err.message}`);
-  process.exit(1);
-});
+main();
 

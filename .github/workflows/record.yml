@@ -52,6 +52,8 @@ jobs:
         # 背景サーバーを使わず、一直線に録画・PDF生成まで実行
         run: |
           mkdir -p output
+          echo "⏳ MongoDB サービスの安定を待機しています..."
+          sleep 5
           npx ts-node src/standalone-recorder.ts \
             --video-id "${{ inputs.video_id }}" \
             --timeout "${{ inputs.timeout_minutes }}"

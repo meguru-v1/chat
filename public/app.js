@@ -434,8 +434,10 @@ async function stopCloudRecording(runId) {
 // ---------------------------
 async function loadStatus() {
   if (isCloudMode) {
+    // クラウドモード時はローカルサーバー(localhost:3000)への通信をスキップ
     await loadCloudStatus();
   } else {
+    // ローカルモード時のみ実行
     await loadLocalStatus();
   }
 }
