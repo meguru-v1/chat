@@ -47,6 +47,10 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // ---------- YouTube API 機能 ----------
 
+let retryCount = 0;
+const MAX_RETRIES = 30; // 約15分（30秒間隔の場合）
+let lastMessageTime = Date.now();
+
 async function getActiveLiveChatId(vid: string, key: string): Promise<string> {
   console.log(`🔍 [API] liveChatId を取得中... (Video: ${vid})`);
   const url = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${vid}&key=${key}`;
@@ -58,7 +62,7 @@ async function getActiveLiveChatId(vid: string, key: string): Promise<string> {
   const data = (await res.json()) as any;
   if (!data.items || data.items.length === 0) throw new Error('動画が存在しないか、非公開です');
   const details = data.items[0].liveStreamingDetails;
-  if (!details || !details.activeLiveChatId) throw new Error('有効なライブチャットが見つかりません (ライブ配信中ですか？)');
+  if (!details || !details.activeLiveChatId) throw new Error('有効なライブチャットが見つかりません');
   console.log(`✅ [API] liveChatId 取得成功: ${details.activeLiveChatId}`);
   return details.activeLiveChatId;
 }
@@ -66,11 +70,18 @@ async function getActiveLiveChatId(vid: string, key: string): Promise<string> {
 async function pollChat(liveChatId: string, key: string, pageToken?: string) {
   if (isStopping) return;
 
-  // タイムアウトチェック
-  const elapsed = Date.now() - startTime;
-  if (elapsed >= maxWaitMs) {
-    console.log(`⏰ 指定時間 (${timeoutMinutes}分) に達したため録画を終了します`);
-    return finish('timeout');
+  // タイムアウトチェック (Actions全体の制限)
+  const elapsedTotal = Date.now() - startTime;
+  if (elapsedTotal >= maxWaitMs) {
+    console.log(`⏰ ワークフローの制限時間 (${timeoutMinutes}分) に達したため、安全に終了処理へ移行します`);
+    return finish('workflow_timeout');
+  }
+
+  // アイドルタイムアウトチェック (15分間何も起きなければ終了とみなす)
+  const idleElapsed = Date.now() - lastMessageTime;
+  if (idleElapsed > 15 * 60 * 1000) {
+    console.log(`💤 15分間新しい動きがないため、配信終了と判断します`);
+    return finish('idle_timeout');
   }
 
   let url = `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${liveChatId}&part=snippet,authorDetails&maxResults=2000&key=${key}`;
@@ -78,16 +89,30 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
 
   try {
     const res = await fetch(url);
+    
     if (!res.ok) {
-      if (res.status === 403 || res.status === 404) {
-        console.log(`🛑 録画終了: チャットが閉じられました (${res.status})`);
-        return finish('stream_ended');
+      if (res.status === 403 || res.status === 404 || res.status >= 500) {
+        retryCount++;
+        const waitSec = 30;
+        console.warn(`⚠️ API警告 (${res.status}): 再接続を試みます (${retryCount}/${MAX_RETRIES}) ... ${waitSec}秒待機`);
+        
+        if (retryCount >= MAX_RETRIES) {
+          console.error(`❌ 最大リトライ回数に達しました。配信が終了したか、API制限の可能性があります。`);
+          return finish('api_error_limit');
+        }
+        
+        pollTimeout = setTimeout(() => pollChat(liveChatId, key, pageToken), waitSec * 1000);
+        return;
       }
-      throw new Error(`APIエラー: ${res.status}`);
+      throw new Error(`API致命的エラー: ${res.status}`);
     }
 
+    // 成功した場合はリトライカウンタをリセット
+    retryCount = 0;
     const data = (await res.json()) as any;
+    
     if (data.items && data.items.length > 0) {
+      lastMessageTime = Date.now(); // 最終アクティビティ更新
       const messagesToSave = data.items.map((item: any) => ({
         sessionId: videoId,
         timestamp: new Date(item.snippet.publishedAt),
@@ -96,10 +121,16 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
       })).filter((m: any) => m.message);
 
       if (messagesToSave.length > 0) {
-        // バルクインサートを試行（効率化）
         await ChatMessage.insertMany(messagesToSave, { ordered: false }).catch(() => {});
         messageCount += messagesToSave.length;
         console.log(`📡 [${new Date().toLocaleTimeString()}] +${messagesToSave.length} 件取得 (累計: ${messageCount} 件)`);
+      }
+    } else {
+      // メッセージが空でも生存ログを出す
+      const now = Date.now();
+      if (!global.lastLogTime || now - global.lastLogTime > 60000) {
+        console.log(`🕒 待機中... (最終取得から ${(idleElapsed/60000).toFixed(1)} 分) / 累計: ${messageCount} 件`);
+        global.lastLogTime = now;
       }
     }
 
@@ -107,9 +138,14 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
     pollTimeout = setTimeout(() => pollChat(liveChatId, key, data.nextPageToken), interval);
 
   } catch (err: any) {
-    console.warn(`⚠️ 通信警告 (10秒後に再試行): ${err.message}`);
-    pollTimeout = setTimeout(() => pollChat(liveChatId, key, pageToken), 10000);
+    console.error(`❌ 通信エラー (30秒後に再試行): ${err.message}`);
+    pollTimeout = setTimeout(() => pollChat(liveChatId, key, pageToken), 30000);
   }
+}
+
+// global型定義の補強
+declare global {
+  var lastLogTime: number | undefined;
 }
 
 // ---------- 終了・PDF生成 ----------
@@ -146,7 +182,7 @@ async function finish(reason: string) {
 // ---------- メイン実行 ----------
 
 async function main() {
-  console.log('--- YouTube Chat Standalone Recorder ---');
+  console.log('--- YouTube Chat Standalone Recorder (Tough Mode) ---');
   console.log(`🎯 Target: ${videoId}`);
   console.log(`⏳ Timeout: ${timeoutMinutes} min`);
   
@@ -159,14 +195,14 @@ async function main() {
   const validApiKey = apiKey!;
 
   try {
-    console.log(`🔌 MongoDB に接続中... (${mongoUri.replace(/:([^:@]+)@/, ':***@')})`);
+    console.log(`🔌 MongoDB に接続中...`);
     await mongoose.connect(mongoUri, {
       serverSelectionTimeoutMS: 5000,
     });
     console.log('✅ MongoDB 接続成功');
 
     const liveChatId = await getActiveLiveChatId(videoId, validApiKey);
-    console.log(`🚀 録画メインループを開始します`);
+    console.log(`🚀 録画メインループを開始します (早期終了防止モード有効)`);
     
     // シグナルハンドリング
     process.on('SIGINT', () => finish('manual_stop'));
