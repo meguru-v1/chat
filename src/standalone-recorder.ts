@@ -135,8 +135,19 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
     }, data.pollingIntervalMillis || 10000);
 
   } catch (err: any) {
-    if (err.response?.status === 403 || err.response?.status === 404) return finish('stream_ended');
-    pollTimeout = setTimeout(() => pollChat(liveChatId, key, pageToken), 10000);
+    const status = err.response?.status;
+    const errorMsg = err.response?.data?.error?.message || err.message;
+    
+    if (status === 403 || status === 404) {
+      console.log(`🛑 録画を終了します (Status: ${status}, Reason: ${errorMsg})`);
+      if (status === 403) {
+        console.warn('💡 ヒント: APIキーのクォータ（1日の制限）を超えているか、キーが無効な可能性があります。');
+      }
+      return finish(`api_error_${status}`);
+    }
+    
+    console.error(`⚠️ APIエラー発生: ${errorMsg}... 20秒後に再試行します`);
+    pollTimeout = setTimeout(() => pollChat(liveChatId, key, pageToken), 20000);
   }
 }
 
