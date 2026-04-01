@@ -134,13 +134,26 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
 
   } catch (err: any) {
     const status = err.response?.status;
-    const errorData = JSON.stringify(err.response?.data || {});
+    const responseData = err.response?.data;
+    const reason = responseData?.error?.errors?.[0]?.reason;
+    const errorData = JSON.stringify(responseData || {});
+
+    // 配信が自然に終了した場合 → 正常終了としてPDFを生成
+    if (reason === 'liveChatEnded') {
+      console.log(`✅ 配信が終了しました。録画を正常終了します。`);
+      return finish('stream_ended');
+    }
+
     console.error(`❌ APIエラー発生 (Status: ${status})`);
     console.error(`📝 詳細: ${errorData}`);
 
-    if (status === 403 || status === 404) {
-      console.log(`🛑 録画を終了します。理由: ${status === 403 ? 'アクセス拒否（クォータ切れ、または権限不足）' : 'チャットが見つからない'}`);
-      return finish(`api_error_${status}`);
+    if (status === 403) {
+      console.log(`🛑 録画を終了します。理由: クォータ切れ、または権限不足`);
+      return finish(`api_error_403`);
+    }
+    if (status === 404) {
+      console.log(`🛑 録画を終了します。理由: チャットが見つからない`);
+      return finish(`api_error_404`);
     }
     console.warn(`⚠️ 通信エラー (20秒後に再試行): ${err.message}`);
     pollTimeout = setTimeout(() => pollChat(liveChatId, key, pageToken), 20000);
