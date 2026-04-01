@@ -223,4 +223,4 @@ async function stopActionsRun(runId) {
 // ---------------------------
 form.addEventListener('submit', startRecording);
 loadStatus();
-setInterval(loadStatus, 20000); // 20秒おきに自動更新
+setInterval(loadStatus, 60000); // 60秒おきに自動更新 (GitHub API制限回避のため)
