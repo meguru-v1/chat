@@ -1,9 +1,12 @@
 /**
- * pdfService.ts — 統計計算 & 日本語PDF生成エンジン
+ * pdfService.ts — 統計計算 & 日本語PDF生成エンジン v3.0
  *
- * - 総コメント数
+ * - 総コメント数 & 配信タイトル表示
  * - 毎分チャット流速の計算 & ピーク時間帯特定
+ * - 発言者ランキング TOP10
  * - テキストベース簡易グラフ（█ ブロック文字）
+ * - カラー帯セクション区切り
+ * - ページ番号フッター
  * - A4サイズ最適化レイアウト
  * - NotoSansJP フォント埋め込みで文字化け完全回避
  */
@@ -20,10 +23,14 @@ export interface IChatMessage {
   message: string;
 }
 
-// ---------- 型定義 ----------
 interface MinuteStats {
   /** "HH:MM" 形式 */
   time: string;
+  count: number;
+}
+
+interface AuthorStats {
+  name: string;
   count: number;
 }
 
@@ -33,25 +40,20 @@ interface SessionStats {
   minuteStats: MinuteStats[];
   peakMinute: MinuteStats;
   avgPerMinute: number;
+  topAuthors: AuthorStats[];
 }
-
-// ---------- 統計計算 ----------
-
-// ---------- 統計計算 ----------
 
 // ---------- 統計計算 ----------
 
 /** 日本時間 (JST) の Date オブジェクトまたは文字列を生成するヘルパー */
 function toJST(date: Date | string | number): Date {
   const d = new Date(date);
-  // 現地時間が JST (UTC+9) になるようにオフセット
   return new Date(d.getTime() + 9 * 60 * 60 * 1000);
 }
 
 /** HH:MM 形式の文字列を生成 (JST) */
 function formatTimeJST(date: Date): string {
   const d = new Date(date.getTime());
-  // UTCとして扱うことで強制的にオフセット後の数値を取得
   return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 }
 
@@ -63,6 +65,7 @@ function computeStats(messages: IChatMessage[]): SessionStats {
       minuteStats: [],
       peakMinute: { time: '--:--', count: 0 },
       avgPerMinute: 0,
+      topAuthors: [],
     };
   }
 
@@ -113,12 +116,24 @@ function computeStats(messages: IChatMessage[]): SessionStats {
 
   const avgPerMinute = Math.round(messages.length / totalMinutes);
 
+  // 5. 発言者ランキング
+  const authorCounts = new Map<string, number>();
+  for (const msg of messages) {
+    const name = msg.authorName || '不明';
+    authorCounts.set(name, (authorCounts.get(name) || 0) + 1);
+  }
+  const topAuthors: AuthorStats[] = Array.from(authorCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
   return {
     totalMessages: messages.length,
     durationMinutes: totalMinutes,
     minuteStats,
     peakMinute,
     avgPerMinute,
+    topAuthors,
   };
 }
 
@@ -145,9 +160,27 @@ function buildTextGraph(
   return lines;
 }
 
+// ---------- PDF ヘルパー ----------
+
+/** カラー帯セクション見出しを描画 */
+function drawSectionHeader(doc: PDFKit.PDFDocument, title: string, color: string = '#2563EB') {
+  const y = doc.y;
+  // 色付き帯を描画
+  doc.save();
+  doc.rect(50, y, doc.page.width - 100, 24).fill(color);
+  doc.fillColor('#FFFFFF').fontSize(13).text(title, 58, y + 5, { width: doc.page.width - 116 });
+  doc.restore();
+  doc.fillColor('#000000');
+  doc.y = y + 32;
+}
+
 // ---------- PDF 生成 ----------
 
-export async function generatePdf(sessionId: string, messages: IChatMessage[]): Promise<Buffer> {
+export async function generatePdf(
+  sessionId: string, 
+  messages: IChatMessage[], 
+  videoTitle: string = '不明なタイトル'
+): Promise<Buffer> {
   // フォント準備
   const fontPath = await ensureFont();
 
@@ -157,14 +190,16 @@ export async function generatePdf(sessionId: string, messages: IChatMessage[]): 
   // PDF 生成
   return new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let pageNumber = 0;
 
     const doc = new PDFDocument({
       size: 'A4',
-      margins: { top: 50, bottom: 50, left: 50, right: 50 },
+      margins: { top: 50, bottom: 60, left: 50, right: 50 },
       info: {
-        Title: `チャットアーカイブ — ${sessionId}`,
-        Author: 'YouTube Chat Smart-Archiver',
+        Title: `チャットアーカイブ — ${videoTitle}`,
+        Author: 'YouTube Chat Smart-Archiver v3.0',
       },
+      bufferPages: true,
     });
 
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -176,43 +211,65 @@ export async function generatePdf(sessionId: string, messages: IChatMessage[]): 
     doc.font('NotoSansJP');
 
     // ======== ヘッダー ========
-    doc
-      .fontSize(22)
-      .text('📊 YouTube チャットアーカイブ レポート', { align: 'center' });
+    // タイトル帯
+    doc.save();
+    doc.rect(0, 0, doc.page.width, 80).fill('#1E293B');
+    doc.fillColor('#FFFFFF').fontSize(20)
+      .text('📊 YouTube チャットアーカイブ レポート', 50, 18, { align: 'center' });
+    doc.fontSize(11).fillColor('#94A3B8')
+      .text(videoTitle, 50, 45, { align: 'center' });
+    doc.restore();
+    doc.fillColor('#000000');
+    doc.y = 95;
 
-    doc.moveDown(0.5);
-    doc.fontSize(12).text(`セッションID: ${sessionId}`, { align: 'center' });
+    doc.fontSize(10).fillColor('#64748B')
+      .text(`セッションID: ${sessionId}`, { align: 'center' });
     doc.text(
       `生成日時 (JST): ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
       { align: 'center' }
     );
-
+    doc.fillColor('#000000');
     doc.moveDown(1);
 
     // ======== 統計セクション ========
-    doc
-      .fontSize(16)
-      .text('── 統計サマリー ──', { underline: true });
-    doc.moveDown(0.5);
+    drawSectionHeader(doc, '📈 統計サマリー', '#2563EB');
+    doc.moveDown(0.3);
 
     doc.fontSize(11);
     doc.text(`総コメント数:     ${stats.totalMessages.toLocaleString()} 件`);
     doc.text(`記録時間:         ${stats.durationMinutes} 分`);
     doc.text(`平均流速:         ${stats.avgPerMinute} 件/分`);
     doc.text(
-      `🔥 ピーク時間帯:     ${stats.peakMinute.time} (${stats.peakMinute.count} 件)`
+      `🔥 ピーク時間帯:   ${stats.peakMinute.time} (${stats.peakMinute.count} 件)`
     );
 
     doc.moveDown(1);
 
+    // ======== 発言者ランキング ========
+    if (stats.topAuthors.length > 0) {
+      drawSectionHeader(doc, '🏆 発言者ランキング TOP10', '#7C3AED');
+      doc.moveDown(0.3);
+      doc.fontSize(10);
+
+      stats.topAuthors.forEach((author, i) => {
+        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+        const barLen = Math.round((author.count / stats.topAuthors[0].count) * 20);
+        const bar = '█'.repeat(barLen);
+        doc.text(`${medal} ${author.name.padEnd(20)} ${bar} ${author.count}件`);
+      });
+
+      doc.moveDown(1);
+    }
+
     // ======== 流速グラフ ========
-    doc
-      .fontSize(16)
-      .text('── タイムゾーン別チャット密度 ──', { underline: true });
-    doc.moveDown(0.5);
+    drawSectionHeader(doc, '📊 タイムライン チャット密度', '#059669');
+    doc.moveDown(0.3);
 
     doc.fontSize(8);
     for (const line of graphLines) {
+      if (doc.y > doc.page.height - 80) {
+        doc.addPage();
+      }
       doc.text(line);
     }
 
@@ -220,10 +277,8 @@ export async function generatePdf(sessionId: string, messages: IChatMessage[]): 
 
     // ======== チャットログ ========
     doc.addPage();
-    doc
-      .fontSize(16)
-      .text('── チャットログ ──', { underline: true });
-    doc.moveDown(0.5);
+    drawSectionHeader(doc, '💬 チャットログ', '#DC2626');
+    doc.moveDown(0.3);
 
     doc.fontSize(9);
 
@@ -244,6 +299,20 @@ export async function generatePdf(sessionId: string, messages: IChatMessage[]): 
         width: doc.page.width - 100,
         lineGap: 2,
       });
+    }
+
+    // ======== ページ番号フッター ========
+    const totalPages = doc.bufferedPageRange().count;
+    for (let i = 0; i < totalPages; i++) {
+      doc.switchToPage(i);
+      doc.save();
+      doc.fontSize(8).fillColor('#94A3B8')
+        .text(
+          `${i + 1} / ${totalPages}`,
+          50, doc.page.height - 40,
+          { align: 'center', width: doc.page.width - 100 }
+        );
+      doc.restore();
     }
 
     doc.end();

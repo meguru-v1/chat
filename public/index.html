@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>YouTube Smart-Archiver</title>
-  <link rel="stylesheet" href="style.css?v=2.0">
+  <meta name="description" content="YouTube ライブチャットを自動録画し、統計付き PDF レポートを生成するツール">
+  <link rel="stylesheet" href="style.css?v=3.0">
   <!-- Font Awesome for icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -16,18 +17,26 @@
         <h1><i class="fab fa-youtube" style="color: #ff0000; margin-right: 0.5rem;"></i> Smart-Archiver</h1>
         <p class="subtitle" style="margin: 0; margin-top: 5px;">
           最新の YouTube ライブチャット自動録画 ＆ レポート 📊
-          <span style="font-size: 0.7rem; color: #00ff88; background: rgba(0,255,136,0.1); padding: 2px 6px; border-radius: 4px; margin-left: 8px;">Stable API v2.5</span>
+          <span style="font-size: 0.7rem; color: #00ff88; background: rgba(0,255,136,0.1); padding: 2px 6px; border-radius: 4px; margin-left: 8px;">v3.0</span>
         </p>
       </div>
     </header>
 
+    <!-- API Rate Limit Warning -->
+    <div id="rateLimitBanner" style="display:none;" class="card" role="alert">
+      <p style="margin:0; color: #f59e0b; font-size: 0.9rem;">
+        <i class="fas fa-exclamation-triangle"></i>
+        <span id="rateLimitMessage">GitHub API 制限中です。しばらくお待ちください。</span>
+      </p>
+    </div>
+
     <!-- Start Recording Form -->
     <section class="card">
       <h2><i class="fas fa-plus-circle"></i> 今すぐ録画を開始</h2>
-      <p style="font-size: 0.85rem; color: #aaa; margin-bottom: 1rem;">Video ID を入力して中継サーバー経由で GitHub Actions を起動します（トークン設定不要）</p>
+      <p style="font-size: 0.85rem; color: #aaa; margin-bottom: 1rem;">YouTube の URL または Video ID を入力してください</p>
       <form id="recordForm">
         <div class="input-group">
-          <input type="text" id="videoIdInput" placeholder="YouTube Video ID (例: dQw4w9WgXcQ)" required autocomplete="off">
+          <input type="text" id="videoIdInput" placeholder="YouTube URL or Video ID (例: dQw4w9WgXcQ)" required autocomplete="off">
           <button type="submit" id="submitBtn" class="btn-primary">
             <i class="fas fa-play"></i> 録画リクエスト
           </button>
@@ -51,11 +60,33 @@
       </ul>
     </section>
 
+    <!-- ④ Channel Management -->
+    <section class="card">
+      <h2><i class="fas fa-satellite-dish"></i> 監視チャンネル管理</h2>
+      <p style="font-size: 0.85rem; color: #aaa; margin-bottom: 1rem;">自動監視するチャンネルを管理します（10分ごとに巡回）</p>
+      
+      <ul id="channelList" class="session-list">
+        <li class="empty-state">読み込み中...</li>
+      </ul>
+
+      <div style="margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+        <h3 style="font-size: 0.95rem; margin-bottom: 0.5rem;"><i class="fas fa-plus"></i> チャンネルを追加</h3>
+        <form id="addChannelForm">
+          <div class="input-group" style="margin-bottom: 0.5rem;">
+            <input type="text" id="channelUrlInput" placeholder="チャンネル URL (例: https://www.youtube.com/@channelname)" required autocomplete="off">
+            <button type="submit" id="addChannelBtn" class="btn-primary">
+              <i class="fas fa-plus"></i> 追加
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
   </div>
 
   <!-- Toast Notification -->
   <div id="toast"></div>
 
-  <script src="app.js?v=2.0"></script>
+  <script src="app.js?v=3.0"></script>
 </body>
 </html>

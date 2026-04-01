@@ -1,6 +1,8 @@
 /**
- * Smart-Archiver v2.1 (GAS Proxy Mode)
- * トークン設定不要・セキュア中継方式
+ * Smart-Archiver v3.0 (GAS Proxy Mode)
+ * - チャンネル管理 UI
+ * - GitHub API 制限表示
+ * - エラー状態の赤バッジ表示
  */
 
 // ==========================================
@@ -13,17 +15,22 @@ const getRepoInfo = () => {
     const host = window.location.hostname;
     const path = window.location.pathname;
     
-    // GitHub Pages の場合: username.github.io/reponame/
     if (host.includes('.github.io')) {
         const owner = host.split('.')[0];
         const repo = path.split('/')[1] || 'chat';
         return `${owner}/${repo}`;
     }
-    // デフォルト（GAKUさんの環境）
     return 'meguru-v1/chat';
 };
 
 const GITHUB_REPO = getRepoInfo();
+
+// ⑥ レート制限管理
+let isRateLimited = false;
+let rateLimitResetTime = null;
+let normalInterval = 60000; // 通常 60秒
+let limitedInterval = 300000; // 制限中 5分
+let statusTimer = null;
 
 // ---------------------------
 // DOM Elements
@@ -34,6 +41,11 @@ const submitBtn = document.getElementById('submitBtn');
 const activeList = document.getElementById('activeSessionsList');
 const historyList = document.getElementById('historySessionsList');
 const toast = document.getElementById('toast');
+const rateLimitBanner = document.getElementById('rateLimitBanner');
+const rateLimitMessage = document.getElementById('rateLimitMessage');
+const channelList = document.getElementById('channelList');
+const addChannelForm = document.getElementById('addChannelForm');
+const channelUrlInput = document.getElementById('channelUrlInput');
 
 // ---------------------------
 // Utils
@@ -69,6 +81,15 @@ function createSessionElement(session, displayState) {
     badgeHtml = `${cloudBadge}<div class="badge recording"><i class="fas fa-circle"></i> EXECUTING</div>`;
     metaHtml = `<span><i class="far fa-clock"></i> ${formatDate(session.startedAt)}</span>`;
     actionHtml = `<button class="btn-danger" onclick="stopActionsRun('${session.githubRunId}')"><i class="fas fa-stop"></i> 停止</button>`;
+  } else if (displayState === 'error') {
+    // ③ エラー状態の赤バッジ
+    badgeHtml = `${cloudBadge}<div class="badge" style="background:rgba(239,68,68,0.2);color:#ef4444;"><i class="fas fa-times-circle"></i> ERROR</div>`;
+    metaHtml = `
+      <span><i class="fab fa-youtube"></i> ${session.videoId}</span>
+      <span><i class="far fa-calendar-alt"></i> ${formatDate(session.date)}</span>
+      <span style="color:#ef4444;"><i class="fas fa-exclamation-triangle"></i> ${session.messageCount}件取得</span>
+    `;
+    actionHtml = '';
   } else {
     badgeHtml = `${cloudBadge}<div class="badge success"><i class="fas fa-check-circle"></i> FINISHED</div>`;
     metaHtml = `
@@ -110,9 +131,37 @@ function createSessionElement(session, displayState) {
 
 async function loadStatus() {
   try {
-    // 1. GitHub Actions の実行状況を取得 (Publicリポジトリならトークン不要)
+    // 1. GitHub Actions の実行状況を取得
     const url = `https://api.github.com/repos/${GITHUB_REPO}/actions/runs?per_page=10`;
     const res = await fetch(url);
+
+    // ⑥ レート制限チェック
+    if (res.status === 403) {
+      const resetHeader = res.headers.get('X-RateLimit-Reset');
+      if (resetHeader) {
+        rateLimitResetTime = new Date(parseInt(resetHeader) * 1000);
+        const resetStr = rateLimitResetTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+        rateLimitMessage.textContent = `GitHub API 制限中です。${resetStr} に復活します。`;
+      } else {
+        rateLimitMessage.textContent = 'GitHub API 制限中です。しばらくお待ちください。';
+      }
+      rateLimitBanner.style.display = 'block';
+      isRateLimited = true;
+      
+      // 自動更新間隔を延長
+      clearInterval(statusTimer);
+      statusTimer = setInterval(loadStatus, limitedInterval);
+      return;
+    }
+
+    // 制限が解除された場合
+    if (isRateLimited) {
+      isRateLimited = false;
+      rateLimitBanner.style.display = 'none';
+      clearInterval(statusTimer);
+      statusTimer = setInterval(loadStatus, normalInterval);
+    }
+
     const data = await res.json();
     const runs = data.workflow_runs || [];
 
@@ -126,7 +175,7 @@ async function loadStatus() {
     activeList.innerHTML = '';
     historyList.innerHTML = '';
 
-    // 進行中の Action（録画ワークフローのみを表示・ monitor は除外）
+    // 進行中の Action（録画ワークフローのみを表示・monitor は除外）
     const activeRuns = runs.filter(r =>
       (r.status === 'in_progress' || r.status === 'queued') &&
       r.name === '📺 YouTube チャット録画 & PDFレポート生成'
@@ -143,9 +192,10 @@ async function loadStatus() {
       activeList.innerHTML = '<li class="empty-msg">現在実行中の監視/録画はありません</li>';
     }
 
-    // 保存済み履歴
+    // 保存済み履歴（③ status に応じて表示を切り替え）
     savedSessions.forEach(session => {
-      historyList.appendChild(createSessionElement(session, 'finished'));
+      const state = session.status === 'error' ? 'error' : 'finished';
+      historyList.appendChild(createSessionElement(session, state));
     });
 
     if (savedSessions.length === 0) {
@@ -181,15 +231,13 @@ async function startRecording(e) {
   submitBtn.disabled = true;
 
   try {
-    // GAS プロキシ経由で GitHub Actions を起動
     const res = await fetch(GAS_PROXY_URL, {
       method: 'POST',
-      mode: 'no-cors', // GAS の制約回避
+      mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ videoId: videoId, action: 'record' })
     });
 
-    // mode: 'no-cors' の場合 res.ok は判定できないが、送信自体は成功する
     showToast(`録画リクエストを送信しました: ${videoId}`);
     
   } catch (err) {
@@ -224,8 +272,129 @@ async function stopActionsRun(runId) {
 }
 
 // ---------------------------
+// ④ チャンネル管理
+// ---------------------------
+
+async function loadChannels() {
+  try {
+    const res = await fetch(`https://raw.githubusercontent.com/${GITHUB_REPO}/main/channels.json?t=${Date.now()}`);
+    if (!res.ok) {
+      channelList.innerHTML = '<li class="empty-msg">チャンネル情報を取得できませんでした</li>';
+      return;
+    }
+    const channels = await res.json();
+    channelList.innerHTML = '';
+
+    if (channels.length === 0) {
+      channelList.innerHTML = '<li class="empty-msg">登録チャンネルはありません</li>';
+      return;
+    }
+
+    channels.forEach((ch, i) => {
+      const li = document.createElement('li');
+      li.className = 'session-item';
+      li.innerHTML = `
+        <div class="session-info">
+          <div class="session-id">
+            <i class="fab fa-youtube" style="color:#ff0000;"></i> ${ch.name}
+            <span class="badge cloud" title="Channel ID" style="font-size:0.7rem;">${ch.id.substring(0, 10)}...</span>
+          </div>
+          <div class="session-meta">
+            <span><i class="fas fa-satellite-dish"></i> 10分間隔で自動巡回中</span>
+          </div>
+        </div>
+        <div class="session-action">
+          <button class="btn-danger" onclick="removeChannel('${ch.id}')" style="font-size:0.8rem; padding:6px 10px;">
+            <i class="fas fa-trash"></i> 削除
+          </button>
+        </div>
+      `;
+      channelList.appendChild(li);
+    });
+  } catch (err) {
+    console.error('Failed to load channels:', err);
+    channelList.innerHTML = '<li class="empty-msg">チャンネル情報の取得に失敗しました</li>';
+  }
+}
+
+async function addChannel(e) {
+  e.preventDefault();
+  const input = channelUrlInput.value.trim();
+  if (!input) return;
+
+  if (!GAS_PROXY_URL.startsWith('http')) {
+    showToast('GAS の URL が設定されていません', 'error');
+    return;
+  }
+
+  // チャンネル URL から ID or ハンドル名を抽出
+  let channelIdentifier = input;
+  
+  // @handle 形式の場合
+  const handleMatch = input.match(/youtube\.com\/@([^\/\s?]+)/);
+  if (handleMatch) {
+    channelIdentifier = '@' + handleMatch[1];
+  }
+  
+  // /channel/UCXXXX 形式
+  const channelIdMatch = input.match(/youtube\.com\/channel\/(UC[a-zA-Z0-9_-]+)/);
+  if (channelIdMatch) {
+    channelIdentifier = channelIdMatch[1];
+  }
+
+  const addBtn = document.getElementById('addChannelBtn');
+  const originalText = addBtn.innerHTML;
+  addBtn.innerHTML = '<div class="loader"></div> 追加中...';
+  addBtn.disabled = true;
+
+  try {
+    await fetch(GAS_PROXY_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        action: 'update_channels', 
+        operation: 'add',
+        channelIdentifier: channelIdentifier
+      })
+    });
+    showToast(`チャンネル追加リクエストを送信しました`);
+    channelUrlInput.value = '';
+    setTimeout(loadChannels, 3000);
+  } catch (err) {
+    showToast(`送信エラー: ${err.message}`, 'error');
+  } finally {
+    addBtn.innerHTML = originalText;
+    addBtn.disabled = false;
+  }
+}
+
+async function removeChannel(channelId) {
+  if (!confirm('このチャンネルを監視リストから削除しますか？')) return;
+
+  try {
+    await fetch(GAS_PROXY_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        action: 'update_channels', 
+        operation: 'remove',
+        channelId: channelId
+      })
+    });
+    showToast(`チャンネル削除リクエストを送信しました`);
+    setTimeout(loadChannels, 3000);
+  } catch (err) {
+    showToast(`送信エラー: ${err.message}`, 'error');
+  }
+}
+
+// ---------------------------
 // イベント登録
 // ---------------------------
 form.addEventListener('submit', startRecording);
+addChannelForm.addEventListener('submit', addChannel);
 loadStatus();
-setInterval(loadStatus, 60000); // 60秒おきに自動更新 (GitHub API制限回避のため)
+loadChannels();
+statusTimer = setInterval(loadStatus, normalInterval); // 60秒おきに自動更新

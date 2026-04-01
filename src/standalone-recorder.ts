@@ -53,6 +53,7 @@ async function finish(reason: string) {
   if (pollTimeout) clearTimeout(pollTimeout);
   if (idleTimer) clearTimeout(idleTimer);
 
+  const isSuccess = messages.length > 0 && !reason.startsWith('api_error');
   console.log(`🏁 録画終了 (${reason}) - 合計 ${messages.length} 件`);
 
   if (messages.length > 0) {
@@ -65,31 +66,42 @@ async function finish(reason: string) {
 
     try {
       if (!fs.existsSync(path.dirname(fullPdfPath))) fs.mkdirSync(path.dirname(fullPdfPath), { recursive: true });
-      const pdfBuffer = await generatePdf(videoId, messages);
+      const pdfBuffer = await generatePdf(videoId, messages, videoTitle);
       fs.writeFileSync(fullPdfPath, pdfBuffer);
-      updateHistory(videoId, messages.length, pdfPath, videoTitle);
+      updateHistory(videoId, messages.length, pdfPath, videoTitle, 'completed');
       console.log(`✅ レポート生成成功: ${pdfPath}`);
     } catch (err) {
       console.error('❌ PDF生成失敗:', err);
+      updateHistory(videoId, messages.length, '', videoTitle, 'error');
     }
+  } else {
+    // ③ メッセージ0件でもエラー履歴として記録
+    updateHistory(videoId, 0, '', videoTitle, 'error');
+    console.log(`⚠️ メッセージ0件のため、エラーとして履歴に記録しました。`);
   }
   process.exit(0);
 }
 
-function updateHistory(vId: string, count: number, p: string, title: string) {
+function updateHistory(vId: string, count: number, p: string, title: string, status: string) {
   const hPath = path.join(__dirname, '../public/sessions.json');
   let h = fs.existsSync(hPath) ? JSON.parse(fs.readFileSync(hPath, 'utf8')) : [];
-  // pdfPath で重複排除（同じ動画を複数回録画した場合は別エントリとして残す）
-  const normalizedPath = p.replace(/^public\//, '');
+  const normalizedPath = p ? p.replace(/^public\//, '') : '';
   const newEntry = { 
     videoId: vId, 
     title: title,
     date: new Date().toISOString(), 
     messageCount: count, 
-    pdfPath: normalizedPath
+    pdfPath: normalizedPath,
+    status: status
   };
-  h = [newEntry, ...h.filter((s: any) => s.pdfPath !== normalizedPath)];
+  // pdfPath が空（エラー）の場合は videoId + date で重複排除
+  if (normalizedPath) {
+    h = [newEntry, ...h.filter((s: any) => s.pdfPath !== normalizedPath)];
+  } else {
+    h = [newEntry, ...h];
+  }
   fs.writeFileSync(hPath, JSON.stringify(h.slice(0, 50), null, 2));
+
 }
 
 // ---------- YouTube API ----------
