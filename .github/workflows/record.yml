@@ -1,5 +1,7 @@
 name: 📺 YouTube チャット録画 & PDFレポート生成
 
+run-name: "🎙️ 録画中: ${{ github.event.client_payload.channel_name || github.event.inputs.video_id || '手動リクエスト' }}"
+
 concurrency:
   group: record-${{ github.event.client_payload.video_id || github.event.inputs.video_id || 'manual' }}
   cancel-in-progress: false

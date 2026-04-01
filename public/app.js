@@ -83,10 +83,12 @@ function createSessionElement(session, displayState) {
     `;
   }
 
+  const displayName = session.title || session.videoId;
+
   li.innerHTML = `
     <div class="session-info">
       <div class="session-id">
-        ${session.videoId === '実行中...' ? '監視中/録画中' : (session.title || session.videoId)} 
+        ${displayName} 
         ${badgeHtml}
       </div>
       <div class="session-meta">
@@ -127,7 +129,7 @@ async function loadStatus() {
     activeRuns.forEach(run => {
       activeList.appendChild(createSessionElement({
         githubRunId: run.id,
-        videoId: '実行中...',
+        videoId: run.display_title || run.name || '実行中...',
         startedAt: run.created_at
       }, 'recording'));
     });

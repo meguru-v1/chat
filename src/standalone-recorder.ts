@@ -32,6 +32,7 @@ const maxWaitMs = maxDurationMinutes * 60 * 1000;
 let messages: any[] = [];
 let isStopping = false;
 let messageCount = 0;
+let videoTitle = 'タイトル不明'; // タイトルを保持
 let pollTimeout: NodeJS.Timeout | null = null;
 let idleTimer: NodeJS.Timeout | null = null;
 const startTime = Date.now();
@@ -55,13 +56,18 @@ async function finish(reason: string) {
   console.log(`🏁 録画終了 (${reason}) - 合計 ${messages.length} 件`);
 
   if (messages.length > 0) {
-    const pdfPath = `public/reports/${videoId}.pdf`;
+    // ファイル名をサニタイズ (安全な形式に)
+    const safeTitle = videoTitle.replace(/[\\/:*?"<>|]/g, '_').substring(0, 50);
+    const dateStr = new Date().toISOString().split('T')[0];
+    const pdfFileName = `${safeTitle}_${dateStr}.pdf`;
+    const pdfPath = `public/reports/${pdfFileName}`;
     const fullPdfPath = path.join(__dirname, '..', pdfPath);
+
     try {
       if (!fs.existsSync(path.dirname(fullPdfPath))) fs.mkdirSync(path.dirname(fullPdfPath), { recursive: true });
       const pdfBuffer = await generatePdf(videoId, messages);
       fs.writeFileSync(fullPdfPath, pdfBuffer);
-      updateHistory(videoId, messages.length, pdfPath);
+      updateHistory(videoId, messages.length, pdfPath, videoTitle);
       console.log(`✅ レポート生成成功: ${pdfPath}`);
     } catch (err) {
       console.error('❌ PDF生成失敗:', err);
@@ -70,23 +76,32 @@ async function finish(reason: string) {
   process.exit(0);
 }
 
-function updateHistory(vId: string, count: number, p: string) {
+function updateHistory(vId: string, count: number, p: string, title: string) {
   const hPath = path.join(__dirname, '../public/sessions.json');
   let h = fs.existsSync(hPath) ? JSON.parse(fs.readFileSync(hPath, 'utf8')) : [];
-  h = [{ videoId: vId, date: new Date().toISOString(), messageCount: count, pdfPath: p.replace('public/', '') }, ...h.filter((s:any) => s.videoId !== vId)];
+  h = [{ 
+    videoId: vId, 
+    title: title,
+    date: new Date().toISOString(), 
+    messageCount: count, 
+    pdfPath: p.replace('public/', '') 
+  }, ...h.filter((s:any) => s.videoId !== vId)];
   fs.writeFileSync(hPath, JSON.stringify(h.slice(0, 50), null, 2));
 }
 
 // ---------- YouTube API ----------
 
-async function getLiveChatId(vid: string, key: string): Promise<string> {
-  const url = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${vid}&key=${key}`;
+async function getLiveChatInfo(vid: string, key: string): Promise<{ chatId: string, title: string }> {
+  const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${vid}&key=${key}`;
   const res = await axios.get(url);
   const data = res.data;
   if (!data.items?.length) throw new Error('動画が見つかりません');
+  
+  const title = data.items[0].snippet?.title || '不明なタイトル';
   const chatId = data.items[0].liveStreamingDetails?.activeLiveChatId;
+  
   if (!chatId) throw new Error('ライブチャットが見つかりません (配信終了済みか非公開)');
-  return chatId;
+  return { chatId, title };
 }
 
 async function pollChat(liveChatId: string, key: string, pageToken?: string) {
@@ -134,16 +149,19 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
 
 // ---------- メイン ----------
 async function start() {
-  console.log(`🚀 Smart-Archiver v2.4 (Pure API Mode) - Video: ${videoId}`);
+  console.log(`🚀 Smart-Archiver v2.5 (Stable API Mode) - Video: ${videoId}`);
   if (!YOUTUBE_API_KEY) {
     console.error('❌ YOUTUBE_API_KEY が不足しています');
     process.exit(1);
   }
 
   try {
-    const chatId = await getLiveChatId(videoId, YOUTUBE_API_KEY);
+    const info = await getLiveChatInfo(videoId, YOUTUBE_API_KEY);
+    videoTitle = info.title;
+    console.log(`📺 対象動画: ${videoTitle}`);
+    
     resetIdleTimer();
-    pollChat(chatId, YOUTUBE_API_KEY);
+    pollChat(info.chatId, YOUTUBE_API_KEY);
   } catch (err: any) {
     console.error('❌ 開始エラー:', err.message);
     process.exit(1);
