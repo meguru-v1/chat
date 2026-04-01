@@ -172,10 +172,10 @@ async function loadStatus() {
     activeList.innerHTML = '';
     historyList.innerHTML = '';
 
-    // 進行中の Action（録画ワークフローのみを表示・monitor は除外）
+    // 進行中の Action（録画ワークフローのみを表示・名前が動的に変わっても検知可能に）
     const activeRuns = runs.filter(r =>
-      (r.status === 'in_progress' || r.status === 'queued') &&
-      r.name === '📺 YouTube チャット録画 & PDFレポート生成'
+      (r.status === 'in_progress' || r.status === 'queued' || r.status === 'pending') &&
+      (r.name.includes('録画') || r.name.includes('record'))
     );
     activeRuns.forEach(run => {
       activeList.appendChild(createSessionElement({
