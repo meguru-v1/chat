@@ -118,11 +118,16 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
     }, data.pollingIntervalMillis || 10000);
 
   } catch (err: any) {
-    if (err.response?.status === 403 || err.response?.status === 404) {
-      console.log(`🛑 録画終了 (API Status: ${err.response?.status})`);
-      return finish('stream_ended_or_restricted');
+    const status = err.response?.status;
+    const errorData = JSON.stringify(err.response?.data || {});
+    console.error(`❌ APIエラー発生 (Status: ${status})`);
+    console.error(`📝 詳細: ${errorData}`);
+
+    if (status === 403 || status === 404) {
+      console.log(`🛑 録画を終了します。理由: ${status === 403 ? 'アクセス拒否（クォータ切れ、または権限不足）' : 'チャットが見つからない'}`);
+      return finish(`api_error_${status}`);
     }
-    console.warn(`⚠️ API通信エラー (20秒後に再試行): ${err.message}`);
+    console.warn(`⚠️ 通信エラー (20秒後に再試行): ${err.message}`);
     pollTimeout = setTimeout(() => pollChat(liveChatId, key, pageToken), 20000);
   }
 }

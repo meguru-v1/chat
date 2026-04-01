@@ -1,5 +1,9 @@
 name: 📺 YouTube チャット録画 & PDFレポート生成
 
+concurrency:
+  group: record-${{ github.event.client_payload.video_id || github.event.inputs.video_id || 'manual' }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
     inputs:
