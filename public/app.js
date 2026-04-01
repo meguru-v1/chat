@@ -76,8 +76,10 @@ function createSessionElement(session, displayState) {
       <span><i class="far fa-calendar-alt"></i> ${formatDate(session.date)}</span>
       <span><i class="far fa-comments"></i> ${session.messageCount}件</span>
     `;
+    const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
+    const pdfUrl = `${baseUrl}/${session.pdfPath}`;
     actionHtml = `
-      <a href="${session.pdfPath}" target="_blank" class="btn-primary" style="text-decoration:none; display:inline-block; padding:8px 12px; border-radius:6px; font-size:13px">
+      <a href="${pdfUrl}" target="_blank" class="btn-primary" style="text-decoration:none; display:inline-block; padding:8px 12px; border-radius:6px; font-size:13px">
         <i class="fas fa-file-pdf"></i> レポート表示
       </a>
     `;
@@ -124,8 +126,11 @@ async function loadStatus() {
     activeList.innerHTML = '';
     historyList.innerHTML = '';
 
-    // 進行中の Action
-    const activeRuns = runs.filter(r => r.status === 'in_progress' || r.status === 'queued');
+    // 進行中の Action（録画ワークフローのみを表示・ monitor は除外）
+    const activeRuns = runs.filter(r =>
+      (r.status === 'in_progress' || r.status === 'queued') &&
+      r.name === '📺 YouTube チャット録画 & PDFレポート生成'
+    );
     activeRuns.forEach(run => {
       activeList.appendChild(createSessionElement({
         githubRunId: run.id,

@@ -79,13 +79,16 @@ async function finish(reason: string) {
 function updateHistory(vId: string, count: number, p: string, title: string) {
   const hPath = path.join(__dirname, '../public/sessions.json');
   let h = fs.existsSync(hPath) ? JSON.parse(fs.readFileSync(hPath, 'utf8')) : [];
-  h = [{ 
+  // pdfPath で重複排除（同じ動画を複数回録画した場合は別エントリとして残す）
+  const normalizedPath = p.replace(/^public\//, '');
+  const newEntry = { 
     videoId: vId, 
     title: title,
     date: new Date().toISOString(), 
     messageCount: count, 
-    pdfPath: p.replace('public/', '') 
-  }, ...h.filter((s:any) => s.videoId !== vId)];
+    pdfPath: normalizedPath
+  };
+  h = [newEntry, ...h.filter((s: any) => s.pdfPath !== normalizedPath)];
   fs.writeFileSync(hPath, JSON.stringify(h.slice(0, 50), null, 2));
 }
 
@@ -113,9 +116,10 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
 
   try {
     const res = await axios.get(url);
-    resetIdleTimer();
     const data = res.data;
     if (data.items?.length) {
+      // 新着メッセージがあった場合のみアイドルタイマーをリセット
+      resetIdleTimer();
       const newMsgs = data.items.map((item: any) => ({
         sessionId: videoId,
         messageId: item.id || '',
@@ -126,6 +130,8 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
       messages.push(...newMsgs);
       messageCount += newMsgs.length;
       console.log(`🎙️ 録画中: +${newMsgs.length}件 (合計: ${messageCount}件)`);
+    } else {
+      console.log(`🎙️ 録画中: 新着なし (合計: ${messageCount}件)`);
     }
 
     pollTimeout = setTimeout(() => {
