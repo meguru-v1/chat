@@ -24,7 +24,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,7 +35,7 @@ jobs:
           echo "📁 Public フォルダの構造:"
           ls -R public
           echo "📝 index.html のバージョン確認:"
-          grep "v1.2-Fix" public/index.html || echo "❌ バージョンスタンプが見つかりません"
+          grep "v2.5" public/index.html && echo "✅ v2.5 確認OK" || echo "❌ バージョンスタンプが見つかりません"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
