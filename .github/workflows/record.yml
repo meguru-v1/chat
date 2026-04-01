@@ -36,11 +36,12 @@ jobs:
 
       - name: 🎙️ スタンドアロン録画開始 (No-DB Mode)
         env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           VIDEO_ID: ${{ github.event.inputs.video_id || github.event.client_payload.video_id }}
-          TIMEOUT: ${{ github.event.inputs.timeout || '360' }}
+          TIMEOUT: ${{ github.event.inputs.timeout || github.event.client_payload.timeout || '360' }}
         run: |
-          echo "🎬 Starting recording: $VIDEO_ID"
-          npx ts-node src/standalone-recorder.ts --video-id $VIDEO_ID --timeout $TIMEOUT
+          echo "🎬 Starting recording: \"$VIDEO_ID\""
+          npx ts-node src/standalone-recorder.ts --video-id="$VIDEO_ID" --timeout="$TIMEOUT"
 
       - name: 📂 成果物をコミットして保存
         run: |
