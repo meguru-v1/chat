@@ -1,4 +1,29 @@
-console.log('🚀 Smart-Archiver v2.0 (Pure Actions Mode)');
+/**
+ * Smart-Archiver v2.1 (GAS Proxy Mode)
+ * トークン設定不要・セキュア中継方式
+ */
+
+// ==========================================
+// 【重要】ここにデプロイした GAS の URL を貼ってください
+// ==========================================
+const GAS_PROXY_URL = 'ここに_GAS_のウェブアプリURLを貼り付けてください';
+
+// 現在表示しているリポジトリ情報を自動取得 (フォーク対応)
+const getRepoInfo = () => {
+    const host = window.location.hostname;
+    const path = window.location.pathname;
+    
+    // GitHub Pages の場合: username.github.io/reponame/
+    if (host.includes('.github.io')) {
+        const owner = host.split('.')[0];
+        const repo = path.split('/')[1] || 'chat';
+        return `${owner}/${repo}`;
+    }
+    // デフォルト（GAKUさんの環境）
+    return 'meguru-v1/chat';
+};
+
+const GITHUB_REPO = getRepoInfo();
 
 // ---------------------------
 // DOM Elements
@@ -9,51 +34,6 @@ const submitBtn = document.getElementById('submitBtn');
 const activeList = document.getElementById('activeSessionsList');
 const historyList = document.getElementById('historySessionsList');
 const toast = document.getElementById('toast');
-const connectionStatus = document.getElementById('connectionStatus');
-
-// 設定関連 (Footer)
-const btnSaveConfig = document.getElementById('btnSaveConfig');
-const ghRepoInput = document.getElementById('ghRepo');
-const ghTokenInput = document.getElementById('ghToken');
-
-// ---------------------------
-// 状態管理 (GitHub 連携のみ)
-// ---------------------------
-let githubRepo = localStorage.getItem('ghRepo') || '';
-let githubToken = localStorage.getItem('ghToken') || '';
-
-// 初期表示用
-ghRepoInput.value = githubRepo;
-ghTokenInput.value = githubToken;
-
-function updateConnectionStatus() {
-  if (githubRepo && githubToken) {
-    connectionStatus.innerHTML = `<span style="color:var(--primary-color)"><i class="fas fa-check-circle"></i> 連携中: ${githubRepo}</span>`;
-  } else {
-    connectionStatus.innerHTML = `<span style="color:var(--danger-color)"><i class="fas fa-exclamation-triangle"></i> 設定未完了</span>`;
-  }
-}
-
-updateConnectionStatus();
-
-// 設定保存
-btnSaveConfig.addEventListener('click', () => {
-  githubRepo = ghRepoInput.value.trim();
-  githubToken = ghTokenInput.value.trim();
-  
-  if (githubRepo && githubToken) {
-    localStorage.setItem('ghRepo', githubRepo);
-    localStorage.setItem('ghToken', githubToken);
-    showToast('GitHub 連携設定を保存しました');
-  } else {
-    localStorage.removeItem('ghRepo');
-    localStorage.removeItem('ghToken');
-    showToast('設定をクリアしました', 'error');
-  }
-  
-  updateConnectionStatus();
-  loadStatus();
-});
 
 // ---------------------------
 // Utils
@@ -75,8 +55,7 @@ function formatDate(dateStr) {
   });
 }
 
-/** Actions の実行履歴から要素を構築 */
-/** セッション要素の構築 (Action実行中 & 保存済み履歴の両方に対応) */
+/** 履歴アイテムの構築 */
 function createSessionElement(session, displayState) {
   const li = document.createElement('li');
   li.className = 'session-item';
@@ -88,14 +67,8 @@ function createSessionElement(session, displayState) {
 
   if (displayState === 'recording') {
     badgeHtml = `${cloudBadge}<div class="badge recording"><i class="fas fa-circle"></i> EXECUTING</div>`;
-    metaHtml = `
-      <span title="開始時刻"><i class="far fa-clock"></i> ${formatDate(session.startedAt)}</span>
-    `;
-    actionHtml = `
-      <button class="btn-danger" onclick="stopActionsRun('${session.githubRunId}')" title="GitHub Actionsを停止">
-        <i class="fas fa-stop"></i> 停止
-      </button>
-    `;
+    metaHtml = `<span><i class="far fa-clock"></i> ${formatDate(session.startedAt)}</span>`;
+    actionHtml = `<button class="btn-danger" onclick="stopActionsRun('${session.githubRunId}')"><i class="fas fa-stop"></i> 停止</button>`;
   } else {
     badgeHtml = `${cloudBadge}<div class="badge success"><i class="fas fa-check-circle"></i> FINISHED</div>`;
     metaHtml = `
@@ -128,29 +101,18 @@ function createSessionElement(session, displayState) {
 }
 
 // ---------------------------
-// GitHub API 通信
+// GitHub API / GAS 通信
 // ---------------------------
-const githubApiHeaders = () => ({
-  'Authorization': `token ${githubToken}`,
-  'Accept': 'application/vnd.github.v3+json'
-});
 
 async function loadStatus() {
-  if (!githubRepo || !githubToken) {
-    activeList.innerHTML = '<div class="empty-state">GitHub 連携設定が必要です (画面下部)</div>';
-    historyList.innerHTML = '<div class="empty-state">設定を完了すると Actions の履歴が表示されます</div>';
-    return;
-  }
-
   try {
-    // 1. GitHub Actions の実行状況を取得
-    const url = `https://api.github.com/repos/${githubRepo}/actions/runs?per_page=10`;
-    const res = await fetch(url, { headers: githubApiHeaders() });
+    // 1. GitHub Actions の実行状況を取得 (Publicリポジトリならトークン不要)
+    const url = `https://api.github.com/repos/${GITHUB_REPO}/actions/runs?per_page=10`;
+    const res = await fetch(url);
     const data = await res.json();
     const runs = data.workflow_runs || [];
 
-    // 2. 保存済みセッション履歴 (Sessions.json) を取得
-    // 相対パスでリポジトリ上のファイルにアクセス
+    // 2. 保存済みセッション履歴 (Sessions.json)
     const resSessions = await fetch('sessions.json?t=' + Date.now());
     let savedSessions = [];
     if (resSessions.ok) {
@@ -160,7 +122,7 @@ async function loadStatus() {
     activeList.innerHTML = '';
     historyList.innerHTML = '';
 
-    // 進行中の Action を表示
+    // 進行中の Action
     const activeRuns = runs.filter(r => r.status === 'in_progress' || r.status === 'queued');
     activeRuns.forEach(run => {
       activeList.appendChild(createSessionElement({
@@ -171,10 +133,10 @@ async function loadStatus() {
     });
 
     if (activeRuns.length === 0) {
-      activeList.innerHTML = '<li class="empty-msg">現在実行中の自動監視/録画はありません</li>';
+      activeList.innerHTML = '<li class="empty-msg">現在実行中の監視/録画はありません</li>';
     }
 
-    // 保存済み履歴を表示
+    // 保存済み履歴
     savedSessions.forEach(session => {
       historyList.appendChild(createSessionElement(session, 'finished'));
     });
@@ -182,10 +144,8 @@ async function loadStatus() {
     if (savedSessions.length === 0) {
       historyList.innerHTML = '<li class="empty-msg">過去の記録レポートはありません</li>';
     }
-
   } catch (err) {
     console.error('Failed to load status:', err);
-    activeList.innerHTML = `<div class="empty-state" style="color:var(--danger-color)">ステータス取得エラー: ${err.message}</div>`;
   }
 }
 
@@ -194,62 +154,53 @@ async function startRecording(e) {
   const videoId = videoIdInput.value.trim();
   if (!videoId) return;
 
-  if (!githubRepo || !githubToken) {
-    showToast('先に GitHub 連携設定を完了してください', 'error');
-    return;
+  if (!GAS_PROXY_URL.startsWith('http')) {
+      showToast('GAS の URL が設定されていません。管理者に連絡してください。', 'error');
+      return;
   }
 
   const originalText = submitBtn.innerHTML;
-  submitBtn.innerHTML = '<div class="loader"></div> 通信中...';
+  submitBtn.innerHTML = '<div class="loader"></div> リクエスト中...';
   submitBtn.disabled = true;
 
   try {
-    // リポジトリ情報を取得してデフォルトブランチを特定
-    const repoRes = await fetch(`https://api.github.com/repos/${githubRepo}`, { headers: githubApiHeaders() });
-    if (!repoRes.ok) throw new Error('リポジトリにアクセスできません');
-    const repoData = await repoRes.json();
-    const defaultBranch = repoData.default_branch || 'main';
-
-    // 録画命令（workflow_dispatch）を送信
-    const res = await fetch(`https://api.github.com/repos/${githubRepo}/actions/workflows/record.yml/dispatches`, {
+    // GAS プロキシ経由で GitHub Actions を起動
+    const res = await fetch(GAS_PROXY_URL, {
       method: 'POST',
-      headers: githubApiHeaders(),
-      body: JSON.stringify({
-        ref: defaultBranch,
-        inputs: { video_id: videoId }
-      })
+      mode: 'no-cors', // GAS の制約回避
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId: videoId, action: 'record' })
     });
 
-    if (res.ok || res.status === 204) {
-      showToast(`GitHub Actions サーバーを起動しました: ${videoId}`);
-    } else {
-      throw new Error(`起動失敗: ${res.status}`);
-    }
+    // mode: 'no-cors' の場合 res.ok は判定できないが、送信自体は成功する
+    showToast(`録画リクエストを送信しました: ${videoId}`);
+    
   } catch (err) {
-    showToast(err.message, 'error');
+    showToast(`送信エラー: ${err.message}`, 'error');
   } finally {
     videoIdInput.value = '';
     submitBtn.innerHTML = originalText;
     submitBtn.disabled = false;
-    setTimeout(loadStatus, 2000);
+    setTimeout(loadStatus, 3000);
   }
 }
 
-// アーティファクトダウンロード機能は PDF 直リンクに置き換えたため削除
-
 async function stopActionsRun(runId) {
-  if (!confirm(`このアクション(ID: ${runId})を停止しますか？`)) return;
+  if (!confirm(`録画中のタスク(ID: ${runId})を停止しますか？`)) return;
+  
+  if (!GAS_PROXY_URL.startsWith('http')) {
+    showToast('停止コマンドを送れません(URL未設定)', 'error');
+    return;
+  }
+
   try {
-    const res = await fetch(`https://api.github.com/repos/${githubRepo}/actions/runs/${runId}/cancel`, { 
-      method: 'POST', 
-      headers: githubApiHeaders() 
+    await fetch(GAS_PROXY_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify({ runId: runId, action: 'stop' })
     });
-    if (res.ok || res.status === 202) {
-      showToast(`停止要求を送信しました`);
-      setTimeout(loadStatus, 2000);
-    } else {
-      showToast('停止に失敗しました', 'error');
-    }
+    showToast(`停止要求を送信しました`);
+    setTimeout(loadStatus, 3000);
   } catch (e) {
     showToast('通信エラー', 'error');
   }
@@ -260,5 +211,4 @@ async function stopActionsRun(runId) {
 // ---------------------------
 form.addEventListener('submit', startRecording);
 loadStatus();
-// 15秒おきに自動更新
-setInterval(loadStatus, 15000);
+setInterval(loadStatus, 20000); // 20秒おきに自動更新

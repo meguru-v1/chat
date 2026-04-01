@@ -1,54 +1,41 @@
-# 📺 YouTube Live Chat Smart-Archiver (Hybrid / Auto-Monitor)
+# 📺 YouTube Smart-Archiver v2.1 (Zero-Setup / No-Token Mode)
 
-YouTubeライブ配信のチャットを **APIキー最小限 & ブラウザ方式** で精密に記録し、配信の盛り上がりを分析した **統計付き日本語PDFレポート** を自動生成するツールです。
-特定のチャンネルを24時間監視し、ライブが始まった瞬間に自動で録画を開始する「全自動見守りモード」を搭載しています。
+YouTube ライブチャットを自動で監視し、録画・解析・PDFレポート生成までを GitHub Actions だけで完結させる、究極の個人用アーカイブシステムです。
 
-## ✨ 主な特徴
-
-- **完全サーバーレス**: GitHub Actions のみで動作し、24時間365日の監視・録画が無料（パブリックリポジトリ）で可能です。
-- **24時間全自動監視 (New!)**: `channels.json` にチャンネルIDを登録するだけで、配信開始を自動検知して録画をスタートします。
-- **APIキー最小限 & 安定録画**: 監視には低コストな API (1クレジット) を使い、録画には Puppeteer (ブラウザ) を使うことで、制限を回避しつつ確実な記録を実現。
-- **最初から記録**: 監視のラグ（最大5分）で流れたチャットも、起動直後の「初期バッファ回収機能」により可能な限り遡って記録します。
-- **統計レポート**: 盛り上がりを可視化したグラフ付きの A4 PDF を自動生成。NotoSansJP フォント埋め込みで文字化けもありません。
+## ✨ v2.1 の特徴
+- **データベース不要**: MongoDB などの外部サービスへの登録は一切不要です。
+- **トークン不要 (Web UI)**: ゲストユーザーがブラウザで GitHub トークンを入力する必要がありません。
+- **セキュア中継**: Google Apps Script (GAS) を介して安全に録画命令を送ります。
+- **オートメーション**: チャンネル ID を登録しておくだけで、24時間 365日 自動で録画が始まります。
 
 ---
 
-## 🚀 使い方
+## 🚀 導入方法 (フォークした人向け)
 
-### 1. 準備 (初回のみ)
-1. このリポジトリを自分のアカウントに **[Fork]** します。
-2. リポジトリの **[Settings] -> [Secrets and variables] -> [Actions]** で以下のシークレットを設定します。
-   - `YOUTUBE_API_KEY`: Google Cloud で発行した YouTube Data API v3 のキー（監視に使用）
-   - `MONGODB_URI`: チャット保存用の MongoDB 接続文字列（MongoDB Atlas 等）
+### 1. リポジトリの準備
+1. このリポジトリを **[Fork]** します。
+2. GitHub の **Settings > Secrets and variables > Actions** に以下のシークレットを追加します。
+   - `YOUTUBE_API_KEY`: YouTube Data API v3 のキー
 
-### 2. 全自動監視の設定
-1. リポジトリ内の `channels.json` を編集し、監視したいチャンネル ID を追加してコミットします。
-   ```json
-   [
-     { "id": "UC_xxxxxxxxxxxx", "name": "チャンネル名" }
-   ]
-   ```
-2. `monitor.yml` ワークフローが自動的に10分おきに巡回を開始します。
+### 2. 中継サーバー (GAS) の設定 (手動ボタンを使う場合)
+1. `gas/proxy.js` の中身をコピーします。
+2. [Google Apps Script](https://script.google.com/) で新規プロジェクトを作成し、コードを貼り付けます。
+3. スクリプトの設定（歯車）から以下の「スクリプトプロパティ」を追加します。
+   - `GH_TOKEN`: あなたの GitHub トークン (repo 権限)
+   - `GH_REPO`: あなたのリポジト名 (例: `yourname/chat`)
+4. 「デプロイ」>「新しいデプロイ」から「ウェブアプリ」として公開（アクセス：全員）し、URL をコピーします。
+5. `public/app.js` の冒頭にある `GAS_PROXY_URL` に、コピーした URL を貼り付けてコミットします。
 
-### 3. 手動での録画開始
-1. **[Actions]** タブから **「📺 YouTube チャット録画 & PDFレポート生成」** を選択。
-2. **[Run workflow]** ボタンをクリックし、`video_id` を入力して実行します。
+### 3. 公開設定
+1. GitHub の **Settings > Pages** で、Build and deployment の Source を `GitHub Actions` に設定します。
+2. これで `https://yourname.github.io/chat/` でダッシュボードが公開されます！
 
 ---
 
-## 🏗️ ディレクトリ構成
+## 🎙️ 使い方
 
-```
-chat/
-├── .github/workflows/
-│   ├── monitor.yml         # 定期監視ワークフロー
-│   └── record.yml          # 録画 & PDF生成ワークフロー
-├── channels.json           # 監視対象チャンネルリスト
-├── src/
-│   ├── monitor.ts          # ライブ配信探知エンジン
-│   ├── standalone-recorder.ts  # ブラウザ録画エンジン
-│   └── pdfService.ts       # 統計 & PDF生成ロジック
-```
+- **自動監視**: `public/channels.json` に録画したいチャンネル ID を追記するだけです。10分ごとに自動でチェックされます。
+- **手動録画**: ダッシュボードの入力欄に Video ID を入れてボタンを押すと、即座に録画 Actions が起動します。
 
-## 📜 ライセンス
-MIT
+## 📄 ライセンス
+MIT License.

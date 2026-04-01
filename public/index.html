@@ -15,24 +15,21 @@
       <div>
         <h1><i class="fab fa-youtube" style="color: #ff0000; margin-right: 0.5rem;"></i> Smart-Archiver</h1>
         <p class="subtitle" style="margin: 0; margin-top: 5px;">
-          GitHub Actions 録画 & レポート管理ダッシュボード 
-          <span style="font-size: 0.7rem; color: #888; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; margin-left: 8px;">v2.0-PureActions</span>
+          最新の YouTube ライブチャット自動録画 ＆ レポート 📊
+          <span style="font-size: 0.7rem; color: #00ff88; background: rgba(0,255,136,0.1); padding: 2px 6px; border-radius: 4px; margin-left: 8px;">No Token Mode v2.1</span>
         </p>
-      </div>
-      <div id="connectionStatus" style="font-size: 0.85rem; color: #888;">
-        <i class="fas fa-plug"></i> 連携確認中...
       </div>
     </header>
 
     <!-- Start Recording Form -->
     <section class="card">
-      <h2><i class="fas fa-plus-circle"></i> 新規録画を開始</h2>
-      <p style="font-size: 0.85rem; color: #aaa; margin-bottom: 1rem;">Video ID を入力して GitHub Actions サーバーを起動します</p>
+      <h2><i class="fas fa-plus-circle"></i> 今すぐ録画を開始</h2>
+      <p style="font-size: 0.85rem; color: #aaa; margin-bottom: 1rem;">Video ID を入力して中継サーバー経由で GitHub Actions を起動します（トークン設定不要）</p>
       <form id="recordForm">
         <div class="input-group">
           <input type="text" id="videoIdInput" placeholder="YouTube Video ID (例: dQw4w9WgXcQ)" required autocomplete="off">
           <button type="submit" id="submitBtn" class="btn-primary">
-            <i class="fas fa-play"></i> サーバー起動
+            <i class="fas fa-play"></i> 録画リクエスト
           </button>
         </div>
       </form>
@@ -54,26 +51,6 @@
       </ul>
     </section>
 
-    <!-- GitHub Settings (Foldable or Footer) -->
-    <footer style="margin-top: 3rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05);">
-        <details>
-            <summary style="cursor: pointer; font-size: 0.8rem; color: #666; text-align: center;">
-                <i class="fas fa-cog"></i> GitHub 連携設定を表示
-            </summary>
-            <div class="card" style="margin-top: 1rem; background: rgba(0,0,0,0.2);">
-                <p style="font-size: 0.8rem; color: #aaa; margin-bottom: 1rem;">Actions を操作するためのリポジトリ情報とトークンを入力してください</p>
-                <div class="input-group" style="margin-bottom: 10px;">
-                    <input type="text" id="ghRepo" placeholder="リポジトリ名 (例: meguru-v1/chat)" />
-                </div>
-                <div class="input-group">
-                    <input type="password" id="ghToken" placeholder="GitHub Token (ghp_...)" />
-                </div>
-                <div style="margin-top: 15px; text-align: right;">
-                    <button id="btnSaveConfig" class="btn-primary" style="font-size: 0.8rem; padding: 0.5rem 1rem;">設定を保存</button>
-                </div>
-            </div>
-        </details>
-    </footer>
   </div>
 
   <!-- Toast Notification -->
