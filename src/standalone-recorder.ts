@@ -115,7 +115,7 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
 
     pollTimeout = setTimeout(() => {
       pollChat(liveChatId, key, data.nextPageToken);
-    }, data.pollingIntervalMillis || 10000);
+    }, 30000); // クォータ節約のため30秒間隔に固定
 
   } catch (err: any) {
     const status = err.response?.status;
