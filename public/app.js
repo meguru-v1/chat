@@ -151,8 +151,18 @@ async function loadStatus() {
 
 async function startRecording(e) {
   e.preventDefault();
-  const videoId = videoIdInput.value.trim();
-  if (!videoId) return;
+  let input = videoIdInput.value.trim();
+  if (!input) return;
+
+  // YouTube の URL から Video ID (11文字) を抽出する
+  const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+  const match = input.match(regex);
+  const videoId = match ? match[1] : (input.length === 11 ? input : null);
+
+  if (!videoId) {
+    showToast('有効な YouTube URL または Video ID を入力してください', 'error');
+    return;
+  }
 
   if (!GAS_PROXY_URL.startsWith('http')) {
       showToast('GAS の URL が設定されていません。管理者に連絡してください。', 'error');
