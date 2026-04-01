@@ -302,6 +302,8 @@ export async function generatePdf(
     }
 
     // ======== ページ番号フッター ========
+    // bufferPages: true の場合、先に flushPages() してから総ページ数を取得する
+    doc.flushPages();
     const totalPages = doc.bufferedPageRange().count;
     for (let i = 0; i < totalPages; i++) {
       doc.switchToPage(i);

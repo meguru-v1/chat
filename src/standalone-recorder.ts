@@ -53,7 +53,6 @@ async function finish(reason: string) {
   if (pollTimeout) clearTimeout(pollTimeout);
   if (idleTimer) clearTimeout(idleTimer);
 
-  const isSuccess = messages.length > 0 && !reason.startsWith('api_error');
   console.log(`🏁 録画終了 (${reason}) - 合計 ${messages.length} 件`);
 
   if (messages.length > 0) {
