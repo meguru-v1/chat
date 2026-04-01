@@ -6,7 +6,7 @@
 // ==========================================
 // 【重要】ここにデプロイした GAS の URL を貼ってください
 // ==========================================
-const GAS_PROXY_URL = 'ここに_GAS_のウェブアプリURLを貼り付けてください';
+const GAS_PROXY_URL = 'https://script.google.com/macros/s/AKfycbyw6esXjC9lw6xQlBETaZTRBW8Yrw0A7M3wGecOFc4vpGEj4cn2IEPoMDaROqfCsxnGuQ/exec';
 
 // 現在表示しているリポジトリ情報を自動取得 (フォーク対応)
 const getRepoInfo = () => {
