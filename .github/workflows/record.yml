@@ -29,7 +29,10 @@ jobs:
           cache: 'npm'
 
       - name: 📦 依存関係をインストール
-        run: npm install
+        run: |
+          npm install
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2
 
       - name: 🎙️ スタンドアロン録画開始 (No-DB Mode)
         env:

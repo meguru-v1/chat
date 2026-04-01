@@ -53,9 +53,10 @@ async function checkChannel(channel: Channel) {
     if (!videoData) return;
 
     const isLive = videoData.snippet.liveBroadcastContent === 'live';
+    const isUpcoming = videoData.snippet.liveBroadcastContent === 'upcoming';
     
-    if (isLive) {
-      console.log(`  🔴 ライブ放送中を確認！ 録画を開始します...`);
+    if (isLive || isUpcoming) {
+      console.log(`  🔴 ${isLive ? 'ライブ放送' : '待機所'}を確認！ 録画を開始します...`);
       await triggerRecording(videoId, channel.name);
     } else {
       console.log(`  💤 ライブ中ではありません。`);
