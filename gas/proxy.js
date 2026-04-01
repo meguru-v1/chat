@@ -52,6 +52,14 @@ function doPost(e) {
   }
 
   // ---------------------
+  // 録画状況の取得 (API制限回避)
+  // ---------------------
+  if (action === 'get_status') {
+    var url = 'https://api.github.com/repos/' + ghRepo + '/actions/runs?per_page=10';
+    return callGitHub(url, 'get', null, ghToken);
+  }
+
+  // ---------------------
   // ④ チャンネル管理
   // ---------------------
   if (action === 'update_channels') {
@@ -59,6 +67,22 @@ function doPost(e) {
   }
 
   return createResponse({ status: 'error', message: '不明なアクション: ' + action });
+}
+
+/**
+ *ブラウザからの GET リクエスト（ステータス確認）に対応
+ */
+function doGet(e) {
+  var props = PropertiesService.getScriptProperties();
+  var ghToken = props.getProperty('GH_TOKEN');
+  var ghRepo = props.getProperty('GH_REPO');
+  
+  if (!ghToken || !ghRepo) {
+    return createResponse({ status: 'error', message: 'GAS 側の設定未完了' });
+  }
+
+  var url = 'https://api.github.com/repos/' + ghRepo + '/actions/runs?per_page=10';
+  return callGitHub(url, 'get', null, ghToken);
 }
 
 /**
@@ -178,11 +202,17 @@ function callGitHub(url, method, body, token) {
   try {
     var response = UrlFetchApp.fetch(url, options);
     var code = response.getResponseCode();
+    var content = response.getContentText();
     
+    // get_status の場合は取得した JSON をそのまま返す
+    if (method.toLowerCase() === 'get') {
+      return createResponse(JSON.parse(content));
+    }
+
     if (code === 204 || code === 202 || code === 200) {
       return createResponse({ status: 'success', message: '命令を GitHub に送信しました。' });
     } else {
-      return createResponse({ status: 'error', message: 'GitHub API エラー: ' + response.getContentText() });
+      return createResponse({ status: 'error', message: 'GitHub API エラー: ' + content });
     }
   } catch (err) {
     return createResponse({ status: 'error', message: '通信エラー: ' + err.message });

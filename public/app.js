@@ -131,40 +131,37 @@ function createSessionElement(session, displayState) {
 
 async function loadStatus() {
   try {
-    // 1. GitHub Actions の実行状況を取得
-    const url = `https://api.github.com/repos/${GITHUB_REPO}/actions/runs?per_page=10`;
+    // 1. [改善] GAS 経由でステータスを取得（API制限 5000枠を共有）
+    const url = `${GAS_PROXY_URL}?t=${Date.now()}`;
     const res = await fetch(url);
 
-    // ⑥ レート制限チェック
-    if (res.status === 403) {
-      const resetHeader = res.headers.get('X-RateLimit-Reset');
-      if (resetHeader) {
-        rateLimitResetTime = new Date(parseInt(resetHeader) * 1000);
-        const resetStr = rateLimitResetTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-        rateLimitMessage.textContent = `GitHub API 制限中です。${resetStr} に復活します。`;
-      } else {
-        rateLimitMessage.textContent = 'GitHub API 制限中です。しばらくお待ちください。';
+    // GAS 側でエラーが返ってきた場合
+    if (!res.ok) {
+      if (res.status === 403) {
+        rateLimitMessage.textContent = 'API 制限中ですが、GAS プロキシにより 5分おきに再試行します。';
+        rateLimitBanner.style.display = 'block';
+        isRateLimited = true;
       }
-      rateLimitBanner.style.display = 'block';
-      isRateLimited = true;
-      
-      // 自動更新間隔を延長
-      clearInterval(statusTimer);
-      statusTimer = setInterval(loadStatus, limitedInterval);
       return;
     }
 
-    // 制限が解除された場合
+    const data = await res.json();
+    
+    // GAS 側からエラーメッセージが届いた場合
+    if (data.status === 'error') {
+      console.error('GAS Error:', data.message);
+      return;
+    }
+
+    const runs = data.workflow_runs || [];
+
+    // 制限バナーの非表示化
     if (isRateLimited) {
       isRateLimited = false;
       rateLimitBanner.style.display = 'none';
       clearInterval(statusTimer);
       statusTimer = setInterval(loadStatus, normalInterval);
     }
-
-    const data = await res.json();
-    const runs = data.workflow_runs || [];
-
     // 2. 保存済みセッション履歴 (Sessions.json)
     const resSessions = await fetch('sessions.json?t=' + Date.now());
     let savedSessions = [];
