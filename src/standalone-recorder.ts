@@ -1,220 +1,206 @@
 /**
- * standalone-recorder.ts — スタンドアロン録画スクリプト (Puppeteer + Database-less版)
- *
- * 使い方:
- *   npx ts-node src/standalone-recorder.ts --video-id [VIDEO_ID] --timeout [MINUTES]
+ * standalone-recorder.ts (Stable API v2.2)
+ * 
+ * 以前の安定版ロジック (YouTube Data API v3) に回帰し、
+ * データベース不要で PDF レポートを生成する構成です。
  */
-import 'dotenv/config';
+
+import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
-import { generatePdf, IChatMessage } from './pdfService';
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import 'dotenv/config';
+import { generatePdf } from './pdfService';
 
-puppeteer.use(StealthPlugin());
+// ---------- 設定 ----------
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 60分間チャット更新がない場合停止
 
-// ---------- 引数解析 ----------
+// 引数取得
 const args = process.argv.slice(2);
-const videoId = getArgValue('--video-id') || '';
-const timeoutMinutes = parseInt(getArgValue('--timeout') || '360', 10);
+const videoIdArg = args.find(a => a.startsWith('--video-id='))?.split('=')[1];
+const timeoutArg = args.find(a => a.startsWith('--timeout='))?.split('=')[1];
 
-function getArgValue(name: string): string | undefined {
-  const idx = args.indexOf(name);
-  if (idx !== -1 && args[idx + 1]) return args[idx + 1];
-  return undefined;
-}
-
-if (!videoId) {
-  console.error('❌ --video-id が指定されていません');
+if (!videoIdArg) {
+  console.error('❌ --video-id=xxx を指定してください');
   process.exit(1);
 }
 
+const videoId = videoIdArg;
+const maxDurationMinutes = parseInt(timeoutArg || '360', 10);
+const maxWaitMs = maxDurationMinutes * 60 * 1000;
+
 // ---------- 状態管理 ----------
+let messages: any[] = [];
 let isStopping = false;
 let messageCount = 0;
-const messages: IChatMessage[] = [];
+let pollTimeout: NodeJS.Timeout | null = null;
+let idleTimer: NodeJS.Timeout | null = null;
 const startTime = Date.now();
-const maxWaitMs = timeoutMinutes * 60 * 1000;
 
-// ---------- メイン録画ロジック (ブラウザ方式) ----------
-
-async function startRecording() {
-  console.log(`🚀 ライブチャット監視を開始します (Zero-DB Mode / Puppeteer)`);
-  console.log(`🎥 Video ID: ${videoId}`);
-
-  let browser;
-  try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu'
-      ]
-    });
-
-    const page = await browser.newPage();
-    
-    await page.setRequestInterception(true);
-    page.on('request', (req: any) => {
-      if (['image', 'font', 'stylesheet', 'media'].includes(req.resourceType())) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-
-    const chatUrl = `https://www.youtube.com/live_chat?v=${videoId}`;
-    await page.goto(chatUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-
-    console.log('✅ チャットページを読み込みました。監視を開始します。');
-
-    await page.exposeFunction('onNewMessage', async (msg: any) => {
-      if (isStopping) return;
-      
-      const newMessage: IChatMessage = {
-        sessionId: videoId,
-        messageId: msg.id,
-        timestamp: new Date(msg.timestampUsec / 1000),
-        authorName: msg.author,
-        message: msg.text
-      };
-
-      // 重複チェック (ID)
-      if (!messages.find(m => m.messageId === msg.id)) {
-        messages.push(newMessage);
-        messageCount++;
-        
-        if (messageCount % 20 === 0 || messageCount === 1) {
-          console.log(`📡 [${new Date().toLocaleTimeString()}] +${messageCount} 件記録中... (最新: ${msg.author})`);
-        }
-      }
-    });
-
-    await page.evaluate(() => {
-      const processElement = (el: any) => {
-        const id = el.getAttribute('id');
-        const author = el.querySelector('#author-name')?.textContent || 'Unknown';
-        const text = el.querySelector('#message')?.textContent || '';
-        const timestampUsec = el.data?.timestampUsec || Date.now() * 1000;
-        
-        if (id && text) {
-          (window as any).onNewMessage({ id, author, text, timestampUsec });
-        }
-      };
-
-      const collectExisting = () => {
-        const items = document.querySelectorAll('yt-live-chat-text-message-renderer');
-        items.forEach((item: any) => processElement(item));
-      };
-
-      collectExisting();
-
-      const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-          mutation.addedNodes.forEach((node: any) => {
-            if (node.nodeName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER') {
-              processElement(node);
-            }
-          });
-        }
-      });
-
-      const container = document.querySelector('#items.yt-live-chat-item-list-renderer');
-      if (container) {
-        observer.observe(container, { childList: true });
-      }
-    });
-
-    while (!isStopping) {
-      if (Date.now() - startTime >= maxWaitMs) {
-        await finish('timeout');
-        break;
-      }
-      if (page.isClosed()) {
-        await finish('browser_closed');
-        break;
-      }
-      await new Promise(r => setTimeout(r, 10000));
-    }
-
-  } catch (err: any) {
-    console.error(`❌ 致命的なエラー: ${err.message}`);
-    await finish('fatal_error');
-  } finally {
-    if (browser) await browser.close();
-  }
+/** アイドルタイマーをリセット (通信が生きているか確認) */
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    console.log('⏰ 60分間チャットの更新またはAPIレスポンスがありません。終了します。');
+    finish('idle_timeout');
+  }, IDLE_TIMEOUT_MS);
 }
 
+/** 終了処理 (PDF生成と履歴更新) */
 async function finish(reason: string) {
   if (isStopping) return;
   isStopping = true;
-  console.log(`🏁 録画を終了します。原因: ${reason}`);
-  console.log(`📊 合計メッセージ数: ${messageCount}`);
 
-  if (messages.length === 0) {
-    console.warn('⚠️ メッセージが記録されなかったため、終了します。');
-    process.exit(0);
+  if (pollTimeout) clearTimeout(pollTimeout);
+  if (idleTimer) clearTimeout(idleTimer);
+
+  console.log(`🏁 録画終了 (理由: ${reason}) - 合計 ${messages.length} 件`);
+
+  if (messages.length > 0) {
+    const reportDir = path.join(__dirname, '../public/reports');
+    if (!fs.existsSync(reportDir)) fs.mkdirSync(reportDir, { recursive: true });
+
+    const pdfPath = `public/reports/${videoId}.pdf`;
+    const fullPdfPath = path.join(__dirname, '..', pdfPath);
+
+    try {
+      console.log('📊 PDFレポートを生成中...');
+      const pdfBuffer = await generatePdf(videoId, messages);
+      fs.writeFileSync(fullPdfPath, pdfBuffer);
+
+      // sessions.json を更新
+      updateSessionHistory(videoId, messages.length, pdfPath);
+      console.log(`✅ 保存完了: ${pdfPath}`);
+    } catch (err) {
+      console.error('❌ PDF生成エラー:', err);
+    }
+  } else {
+    console.log('ℹ️ メッセージが0件のため、レポートは生成しません。');
   }
 
-  // 時系列順にソート（初期バッファ対策）
-  messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-
-  try {
-    console.log('📄 PDFレポートを作成中...');
-    const pdfBuffer = await generatePdf(videoId, messages);
-    
-    // 保存先の確保
-    const reportsDir = path.join(__dirname, '../public/reports');
-    if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
-    
-    const pdfFileName = `${videoId}_${Date.now()}.pdf`;
-    const pdfPath = path.join(reportsDir, pdfFileName);
-    fs.writeFileSync(pdfPath, pdfBuffer);
-    console.log(`✅ PDF保存完了: ${pdfPath}`);
-
-    // 履歴 (sessions.json) の更新
-    updateSessionsJson(videoId, pdfFileName, messages.length);
-
-  } catch (err: any) {
-    console.error(`❌ PDF生成エラー: ${err.message}`);
-  }
-
-  console.log('👋 全工程が終了しました。');
   process.exit(0);
 }
 
-function updateSessionsJson(vid: string, fileName: string, count: number) {
+/** 履歴 (sessions.json) の更新 */
+function updateSessionHistory(vId: string, count: number, pathStr: string) {
   const sessionsPath = path.join(__dirname, '../public/sessions.json');
-  let sessions = [];
-  
+  let sessions: any[] = [];
+
   if (fs.existsSync(sessionsPath)) {
     try {
-      sessions = JSON.parse(fs.readFileSync(sessionsPath, 'utf-8'));
-    } catch (e) {
-      sessions = [];
-    }
+      sessions = JSON.parse(fs.readFileSync(sessionsPath, 'utf8'));
+    } catch (e) {}
   }
 
+  // 重複削除して、新しい履歴を先頭に追加
   const newSession = {
-    videoId: vid,
-    pdfPath: `reports/${fileName}`,
+    videoId: vId,
     date: new Date().toISOString(),
-    messageCount: count
+    messageCount: count,
+    pdfPath: pathStr.replace('public/', '') // Webからのアクセスパス
   };
 
+  sessions = sessions.filter(s => s.videoId !== vId);
   sessions.unshift(newSession);
-  // 直近 50 件程度を保持
-  sessions = sessions.slice(0, 50);
 
-  fs.writeFileSync(sessionsPath, JSON.stringify(sessions, null, 2));
-  console.log('✅ sessions.json を更新しました。');
+  fs.writeFileSync(sessionsPath, JSON.stringify(sessions.slice(0, 50), null, 2));
 }
 
-// ---------- 開始 ----------
-startRecording();
+// ==========================================
+// YouTube Data API 関連
+// ==========================================
+
+/** 1. liveChatId を取得 */
+async function getLiveChatId(vid: string, key: string): Promise<string> {
+  const url = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${vid}&key=${key}`;
+  const res = await axios.get(url);
+  const data = res.data;
+
+  if (!data.items || data.items.length === 0) {
+    throw new Error('動画が見つかりませんでした。');
+  }
+
+  const details = data.items[0].liveStreamingDetails;
+  if (!details || !details.activeLiveChatId) {
+    throw new Error('この動画には有効なライブチャットがありません。');
+  }
+
+  return details.activeLiveChatId;
+}
+
+/** 2. チャットのポーリング */
+async function pollChat(liveChatId: string, key: string, pageToken?: string) {
+  if (isStopping) return;
+
+  // 全体のタイムアウトチェック
+  if (Date.now() - startTime >= maxWaitMs) {
+    return finish('max_duration_reached');
+  }
+
+  let url = `https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${liveChatId}&part=snippet,authorDetails&maxResults=2000&key=${key}`;
+  if (pageToken) url += `&pageToken=${pageToken}`;
+
+  try {
+    const res = await axios.get(url);
+    resetIdleTimer();
+
+    const data = res.data;
+    if (data.items && data.items.length > 0) {
+      const newMsgs = data.items.map((item: any) => ({
+        sessionId: videoId,
+        messageId: item.id || '',
+        authorName: item.authorDetails.displayName || '不明',
+        message: item.snippet.displayMessage || '',
+        timestamp: new Date(item.snippet.publishedAt)
+      })).filter((m: any) => m.message);
+
+      messages.push(...newMsgs);
+      messageCount += newMsgs.length;
+      console.log(`🎙️ 録画中: +${newMsgs.length}件 (合計: ${messageCount}件)`);
+    }
+
+    const nextToken = data.nextPageToken;
+    const interval = data.pollingIntervalMillis || 10000;
+
+    pollTimeout = setTimeout(() => {
+      pollChat(liveChatId, key, nextToken);
+    }, interval);
+
+  } catch (err: any) {
+    if (err.response?.status === 403 || err.response?.status === 404) {
+      console.log('🛑 ライブチャットが終了した可能性があります（403/404）');
+      return finish('stream_ended');
+    }
+    console.error(`⚠️ APIエラー (${err.message})... 10秒後に再試行`);
+    pollTimeout = setTimeout(() => {
+      pollChat(liveChatId, key, pageToken);
+    }, 10000);
+  }
+}
+
+// ==========================================
+// 実行
+// ==========================================
+async function start() {
+  console.log(`🚀 Smart-Archiver v2.2 スタート (Video ID: ${videoId})`);
+
+  if (!YOUTUBE_API_KEY) {
+    console.error('❌ YOUTUBE_API_KEY がセットされていません');
+    process.exit(1);
+  }
+
+  try {
+    console.log('🔍 YouTube Data API に接続中...');
+    const liveChatId = await getLiveChatId(videoId, YOUTUBE_API_KEY);
+    console.log(`📡 LiveChatId 取得成功: ${liveChatId}`);
+
+    resetIdleTimer();
+    pollChat(liveChatId, YOUTUBE_API_KEY);
+
+  } catch (err: any) {
+    console.error('❌ 起動エラー:', err.message);
+    process.exit(1);
+  }
+}
+
+start();
