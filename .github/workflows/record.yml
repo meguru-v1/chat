@@ -14,7 +14,7 @@ on:
         required: true
       timeout:
         description: '録画時間 (分)'
-        default: '360'
+        default: '330'
   repository_dispatch:
     types: [youtube-stream-started]
 
@@ -41,7 +41,7 @@ jobs:
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           VIDEO_ID: ${{ github.event.inputs.video_id || github.event.client_payload.video_id }}
-          TIMEOUT: ${{ github.event.inputs.timeout || github.event.client_payload.timeout || '360' }}
+          TIMEOUT: ${{ github.event.inputs.timeout || github.event.client_payload.timeout || '330' }}
         run: |
           echo "🎬 Starting recording: \"$VIDEO_ID\""
           npx ts-node src/standalone-recorder.ts --video-id="$VIDEO_ID" --timeout="$TIMEOUT"
