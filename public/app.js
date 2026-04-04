@@ -172,15 +172,38 @@ async function loadStatus() {
     activeList.innerHTML = '';
     historyList.innerHTML = '';
 
-    // 進行中の Action（録画ワークフローのみを表示・名前が動的に変わっても検知可能に）
-    const activeRuns = runs.filter(r =>
-      (r.status === 'in_progress' || r.status === 'queued' || r.status === 'pending') &&
-      (r.name.includes('録画') || r.name.includes('record'))
-    );
+    // 進行中の Action を表示
+    // - status が in_progress / queued / pending の全ジョブを候補に
+    // - ワークフローファイル名 (path) に record が含まれ、monitor は除外
+    // - 上記が取れない場合は名前の部分一致でフォールバック
+    const activeRuns = runs.filter(r => {
+      const status = r.status;
+      const isActive = status === 'in_progress' || status === 'queued' || status === 'pending';
+      if (!isActive) return false;
+
+      // monitor ワークフローは除外
+      const path = (r.path || '').toLowerCase();
+      const name = (r.name || '').toLowerCase();
+      const displayTitle = (r.display_title || '').toLowerCase();
+
+      if (path.includes('monitor') || name.includes('monitor') || name.includes('監視')) return false;
+
+      // record.yml に関連するジョブを検出（複数の判定方法を OR で組み合わせる）
+      return (
+        path.includes('record') ||
+        name.includes('録画') ||
+        name.includes('record') ||
+        displayTitle.includes('録画中')
+      );
+    });
+
     activeRuns.forEach(run => {
+      // run-name (display_title) から video_id を抽出して表示
+      const videoIdMatch = (run.display_title || run.name || '').match(/[a-zA-Z0-9_-]{11}/);
+      const displayVideoId = videoIdMatch ? videoIdMatch[0] : (run.display_title || run.name || '実行中...');
       activeList.appendChild(createSessionElement({
         githubRunId: run.id,
-        videoId: run.display_title || run.name || '実行中...',
+        videoId: displayVideoId,
         startedAt: run.created_at
       }, 'recording'));
     });
