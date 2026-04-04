@@ -1,6 +1,7 @@
 name: 📺 YouTube チャット録画 & PDFレポート生成
 
-run-name: "🎙️ 録画中: ${{ github.event.client_payload.channel_name || github.event.inputs.video_id || '手動リクエスト' }}"
+# ✅ 安定性向上: run-name に video_id を明示し、監視エンジンの二重起動判定精度を向上
+run-name: "🎙️ 録画中: ${{ github.event.client_payload.video_id || github.event.inputs.video_id }} — ${{ github.event.client_payload.channel_name || '手動' }}"
 
 concurrency:
   group: record-${{ github.event.client_payload.video_id || github.event.inputs.video_id || 'manual' }}
@@ -10,10 +11,10 @@ on:
   workflow_dispatch:
     inputs:
       video_id:
-        description: 'YouTube Video ID'
+        description: 'YouTube Video ID (11文字)'
         required: true
       timeout:
-        description: '録画時間 (分)'
+        description: '録画時間 (分, 最大330)'
         default: '330'
   repository_dispatch:
     types: [youtube-stream-started]
@@ -21,9 +22,11 @@ on:
 jobs:
   record-and-report:
     runs-on: ubuntu-latest
-    timeout-minutes: 380
+    # GitHub Actions の上限は6時間(360分)。PDF生成・push の余裕を30分確保。
+    timeout-minutes: 370
     permissions:
-      contents: write # 履歴ファイルの書き込みに必要
+      contents: write
+
     steps:
       - name: 📥 リポジトリをチェックアウト
         uses: actions/checkout@v4
@@ -40,16 +43,21 @@ jobs:
       - name: 🎙️ スタンドアロン録画開始 (No-DB Mode)
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          # ✅ セキュリティ: 環境変数経由で渡すことでシェルインジェクションを防止
           VIDEO_ID: ${{ github.event.inputs.video_id || github.event.client_payload.video_id }}
           TIMEOUT: ${{ github.event.inputs.timeout || github.event.client_payload.timeout || '330' }}
         run: |
-          echo "🎬 Starting recording: \"$VIDEO_ID\""
+          echo "🎬 Starting recording: \"$VIDEO_ID\" (timeout: ${TIMEOUT}min)"
           npx ts-node src/standalone-recorder.ts --video-id="$VIDEO_ID" --timeout="$TIMEOUT"
 
       - name: 📂 成果物をコミットして保存
+        # ✅ 最重要: if: always() により、録画が途中終了・強制終了された場合でも必ず実行する
+        if: always()
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/reports/*.pdf public/sessions.json
+          git pull --rebase origin main || true
+          git add public/reports/ public/sessions.json || true
           git commit -m "chore: 録画レポートを追加 (${{ github.event.inputs.video_id || github.event.client_payload.video_id }})" || echo "No changes to commit"
-          git push
+          git push || echo "Push failed (conflict), retrying..."
+          git pull --rebase origin main && git push || true
