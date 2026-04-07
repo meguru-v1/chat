@@ -70,6 +70,7 @@ jobs:
           REPO_NAME: ${{ github.repository }}
         run: |
           PAGES_URL="https://${REPO_NAME%%/*}.github.io/${REPO_NAME#*/}/"
+          ICON_URL="${PAGES_URL}icons/icon.png"
           curl -H "Content-Type: application/json" \
-               -d "{\"content\": \"✅ **録画完了**\\n🎥 対象動画: \`${VIDEO_ID}\` の録画とPDFレポート生成が完了しました！\\n🔗 [ここをクリックしてレポートを確認](${PAGES_URL})\"}" \
+               -d "{\"username\": \"Smart-Archiver\", \"avatar_url\": \"${ICON_URL}\", \"content\": \"✅ **録画完了**\\n🎥 対象動画: \`${VIDEO_ID}\` の録画とPDFレポート生成が完了しました！\\n🔗 [ここをクリックしてレポートを確認](${PAGES_URL})\"}" \
                $DISCORD_WEBHOOK
