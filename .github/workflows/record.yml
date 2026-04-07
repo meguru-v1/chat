@@ -62,19 +62,14 @@ jobs:
           git push || echo "Push failed (conflict), retrying..."
           git pull --rebase origin main && git push || true
 
-      - name: 📱 スマホに完了通知を送信 (ntfy)
-        if: always() && env.NTFY_TOPIC != ''
+      - name: 💬 Discord に完了通知を送信
+        if: always() && env.DISCORD_WEBHOOK != ''
         env:
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
           VIDEO_ID: ${{ github.event.inputs.video_id || github.event.client_payload.video_id }}
           REPO_NAME: ${{ github.repository }}
         run: |
-          # アプリで一発で開けるようにGitHub PagesのURLをActionボタンとして添与
           PAGES_URL="https://${REPO_NAME%%/*}.github.io/${REPO_NAME#*/}/"
-          curl \
-            -H "Title: YouTube録画＆レポート完了" \
-            -H "Tags: white_check_mark,page_facing_up" \
-            -H "Actions: view, アプリを開く(PDF確認), ${PAGES_URL}" \
-            -d "🎥 録画対象: ${VIDEO_ID} 
-          の録画データとPDFレポートが保存されました！" \
-            ntfy.sh/${NTFY_TOPIC}
+          curl -H "Content-Type: application/json" \
+               -d "{\"content\": \"✅ **録画完了**\\n🎥 対象動画: \`${VIDEO_ID}\` の録画とPDFレポート生成が完了しました！\\n🔗 [ここをクリックしてレポートを確認](${PAGES_URL})\"}" \
+               $DISCORD_WEBHOOK
