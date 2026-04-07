@@ -174,13 +174,30 @@ function drawSectionHeader(doc: PDFKit.PDFDocument, title: string, color: string
   doc.y = y + 32;
 }
 
+/** PDFで文字化け（豆腐）になる絵文字や特殊文字を削除するヘルパー */
+function cleanTextForPdf(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '') // サロゲートペア（大半の絵文字・顔文字を含む）
+    .replace(/[\x00-\x09\x0B-\x1F\x7F]/g, '')       // 制御文字（改行を除く）
+    .replace(/[\u200B-\u200D\uFEFF]/g, '');         // ゼロ幅文字
+}
+
 // ---------- PDF 生成 ----------
 
 export async function generatePdf(
   sessionId: string, 
-  messages: IChatMessage[], 
-  videoTitle: string = '不明なタイトル'
+  rawMessages: IChatMessage[], 
+  rawVideoTitle: string = '不明なタイトル'
 ): Promise<Buffer> {
+  // PDFの文字化けを防ぐため、事前に絵文字等の非対応文字をすべて削除
+  const videoTitle = cleanTextForPdf(rawVideoTitle);
+  const messages = rawMessages.map(m => ({
+    ...m,
+    authorName: cleanTextForPdf(m.authorName),
+    message: cleanTextForPdf(m.message)
+  }));
+
   // フォント準備
   const fontPath = await ensureFont();
 
