@@ -67,6 +67,34 @@ function formatDate(dateStr) {
   });
 }
 
+// 動画タイトルの独自キャッシュ
+const titleCache = {};
+
+/** NoEmbedAPIを利用して画面上のIDを非同期でタイトルに置き換える */
+async function resolveTitles() {
+  const elements = document.querySelectorAll('.video-title-display');
+  for (const el of elements) {
+    const videoId = el.getAttribute('data-video-id');
+    const currentText = el.textContent.trim();
+    
+    // 表示名がIDのまま（タイトルが未取得）の場合のみ実行
+    if (currentText === videoId && videoId) {
+      if (titleCache[videoId]) {
+        el.textContent = titleCache[videoId];
+      } else {
+        try {
+          const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`);
+          const data = await res.json();
+          if (data && data.title) {
+            titleCache[videoId] = data.title;
+            el.textContent = data.title;
+          }
+        } catch(e) {}
+      }
+    }
+  }
+}
+
 /** 履歴アイテムの構築 */
 function createSessionElement(session, displayState) {
   const li = document.createElement('li');
@@ -111,7 +139,7 @@ function createSessionElement(session, displayState) {
   li.innerHTML = `
     <div class="session-info">
       <div class="session-id">
-        ${displayName} 
+        <span class="video-title-display" data-video-id="${session.videoId}">${displayName}</span>
         ${badgeHtml}
       </div>
       <div class="session-meta">
@@ -232,6 +260,9 @@ async function loadStatus() {
     if (savedSessions.length === 0) {
       historyList.innerHTML = '<li class="empty-msg">過去の記録レポートはありません</li>';
     }
+
+    // UIの描画完了後に、ID表示のままになっている録画の動画タイトルを非同期取得する
+    resolveTitles();
   } catch (err) {
     console.error('Failed to load status:', err);
   }
