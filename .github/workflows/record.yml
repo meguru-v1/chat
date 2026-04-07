@@ -28,6 +28,25 @@ jobs:
       contents: write
 
     steps:
+      - name: 💬 Discord に録画開始の通知を送信
+        if: always()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          VIDEO_ID: ${{ github.event.inputs.video_id || github.event.client_payload.video_id }}
+          VIDEO_TITLE: ${{ github.event.client_payload.video_title }}
+          REPO_NAME: ${{ github.repository }}
+        run: |
+          # Webhookが設定されていない場合はスキップ
+          if [ -z "$DISCORD_WEBHOOK" ]; then echo "Webhook is not set. Skipping."; exit 0; fi
+          
+          PAGES_URL="https://${REPO_NAME%%/*}.github.io/${REPO_NAME#*/}/"
+          ICON_URL="${PAGES_URL}icons/icon.png"
+          PAYLOAD=$(jq -n --arg username "Smart-Archiver" \
+                           --arg avatar "$ICON_URL" \
+                           --arg content "🔴 **録画開始**\n🎥 対象動画: **${VIDEO_TITLE:-$VIDEO_ID}** の監視と録画プロセスを開始しました！\n🔗 [アプリを開いて進捗を確認する]($PAGES_URL)" \
+                           '{username: $username, avatar_url: $avatar, content: $content}')
+          curl -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK"
+
       - name: 📥 リポジトリをチェックアウト
         uses: actions/checkout@v4
 
@@ -63,12 +82,13 @@ jobs:
           git pull --rebase origin main && git push || true
 
       - name: 💬 Discord に完了通知を送信
-        if: always() && env.DISCORD_WEBHOOK != ''
+        if: always()
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
           VIDEO_ID: ${{ github.event.inputs.video_id || github.event.client_payload.video_id }}
           REPO_NAME: ${{ github.repository }}
         run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then echo "Webhook is not set. Skipping."; exit 0; fi
           PAGES_URL="https://${REPO_NAME%%/*}.github.io/${REPO_NAME#*/}/"
           ICON_URL="${PAGES_URL}icons/icon.png"
           PAYLOAD=$(jq -n --arg username "Smart-Archiver" \
