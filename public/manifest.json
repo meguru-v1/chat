@@ -1,0 +1,17 @@
+{
+  "name": "Smart-Archiver",
+  "short_name": "Archiver",
+  "description": "YouTube Live Chat Recording & Analytics Tool",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0b0d18",
+  "theme_color": "#00d2ff",
+  "icons": [
+    {
+      "src": "icons/icon.png",
+      "sizes": "192x192 256x256 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

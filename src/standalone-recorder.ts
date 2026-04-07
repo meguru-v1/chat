@@ -196,13 +196,23 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
 
     if (data.items?.length) {
       resetIdleTimer();
-      const newMsgs = data.items.map((item: any) => ({
-        sessionId: videoId,
-        messageId: item.id ?? '',
-        authorName: item.authorDetails?.displayName ?? '不明',
-        message: item.snippet?.displayMessage ?? '',
-        timestamp: item.snippet?.publishedAt,
-      }));
+      const newMsgs = data.items.map((item: any) => {
+        const type = item.snippet?.type;
+        let superChatAmount;
+        if (type === 'superChatEvent') {
+          superChatAmount = item.snippet?.superChatDetails?.amountDisplayString;
+        } else if (type === 'superStickerEvent') {
+          superChatAmount = item.snippet?.superStickerDetails?.amountDisplayString;
+        }
+        return {
+          sessionId: videoId,
+          messageId: item.id ?? '',
+          authorName: item.authorDetails?.displayName ?? '不明',
+          message: item.snippet?.displayMessage ?? '',
+          timestamp: item.snippet?.publishedAt,
+          superChatAmount
+        };
+      });
       messages.push(...newMsgs);
       messageCount += newMsgs.length;
       console.log(`🎙️ 録画中: +${newMsgs.length}件 (合計: ${messageCount}件)`);
