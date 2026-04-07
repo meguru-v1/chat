@@ -198,12 +198,23 @@ async function loadStatus() {
     });
 
     activeRuns.forEach(run => {
-      // run-name (display_title) から video_id を抽出して表示
-      const videoIdMatch = (run.display_title || run.name || '').match(/[a-zA-Z0-9_-]{11}/);
-      const displayVideoId = videoIdMatch ? videoIdMatch[0] : (run.display_title || run.name || '実行中...');
+      const runName = run.display_title || run.name || '';
+      
+      // 文字列から11文字のIDらしき部分を抽出
+      const videoIdMatch = runName.match(/[a-zA-Z0-9_-]{11}/);
+      const displayVideoId = videoIdMatch ? videoIdMatch[0] : '実行中...';
+      
+      // 文字列からタイトル部分を抽出 (例: "🎙️ 録画中: タイトル — チャンネル名")
+      let extractedTitle = undefined;
+      const titleSplit = runName.split(' — ');
+      if (titleSplit.length > 0) {
+        extractedTitle = titleSplit[0].replace('🎙️ 録画中: ', '').replace('🎙️ 録画中:', '').trim();
+      }
+
       activeList.appendChild(createSessionElement({
         githubRunId: run.id,
         videoId: displayVideoId,
+        title: extractedTitle || runName,
         startedAt: run.created_at
       }, 'recording'));
     });

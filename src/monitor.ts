@@ -144,7 +144,7 @@ async function checkChannel(channel: Channel, activeRecordings: Set<string>) {
         }
 
         console.log(`  🔴 ライブ放送を確認！ 録画を開始します...`);
-        await triggerRecording(videoId, channel.name);
+        await triggerRecording(videoId, channel.name, entry.title);
         triggeredIds.add(videoId);
 
       } else if (isUpcoming) {
@@ -161,7 +161,7 @@ async function checkChannel(channel: Channel, activeRecordings: Set<string>) {
               continue;
             }
             console.log(`  🟡 待機所を確認！ 開始まであと${Math.round(minutesUntilStart)}分。先行録画を開始します...`);
-            await triggerRecording(videoId, channel.name);
+            await triggerRecording(videoId, channel.name, entry.title);
             triggeredIds.add(videoId);
           } else if (minutesUntilStart > 5) {
             console.log(`  ⏳ 待機所を確認。配信まであと ${Math.round(minutesUntilStart)} 分。次の巡回を待ちます。`);
@@ -185,7 +185,7 @@ async function checkChannel(channel: Channel, activeRecordings: Set<string>) {
 }
 
 /** GitHub Actions の録画ワークフローを起動 */
-async function triggerRecording(videoId: string, channelName: string) {
+async function triggerRecording(videoId: string, channelName: string, videoTitle: string) {
   if (!GITHUB_TOKEN || !GITHUB_REPO) {
     console.error('  ❌ GITHUB_TOKEN または GITHUB_REPOSITORY が未設定です。');
     return;
@@ -206,6 +206,7 @@ async function triggerRecording(videoId: string, channelName: string) {
       client_payload: {
         video_id: videoId,
         channel_name: channelName,
+        video_title: videoTitle,
       },
     });
     console.log(`  🚀 GitHub Actions 起動命令を送信しました (VideoID: ${videoId})`);

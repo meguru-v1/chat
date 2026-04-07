@@ -297,6 +297,10 @@ async function start() {
     videoTitle = info.title;
     console.log(`📺 対象動画: ${videoTitle}`);
 
+    if (process.env.GITHUB_ENV) {
+      fs.appendFileSync(process.env.GITHUB_ENV, `VIDEO_TITLE<<EOF\n${videoTitle}\nEOF\n`);
+    }
+
     resetIdleTimer();
     pollChat(info.chatId, YOUTUBE_API_KEY);
   } catch (err: any) {

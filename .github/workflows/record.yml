@@ -1,7 +1,7 @@
 name: 📺 YouTube チャット録画 & PDFレポート生成
 
-# ✅ 安定性向上: run-name に video_id を明示し、監視エンジンの二重起動判定精度を向上
-run-name: "🎙️ 録画中: ${{ github.event.client_payload.video_id || github.event.inputs.video_id }} — ${{ github.event.client_payload.channel_name || '手動' }}"
+# ✅ 安定性向上: run-name に video_title や video_id を明示し、監視エンジンの二重起動判定精度を向上
+run-name: "🎙️ 録画中: ${{ github.event.client_payload.video_title || github.event.client_payload.video_id || github.event.inputs.video_id }} — ${{ github.event.client_payload.channel_name || '手動' }}"
 
 concurrency:
   group: record-${{ github.event.client_payload.video_id || github.event.inputs.video_id || 'manual' }}
@@ -71,6 +71,8 @@ jobs:
         run: |
           PAGES_URL="https://${REPO_NAME%%/*}.github.io/${REPO_NAME#*/}/"
           ICON_URL="${PAGES_URL}icons/icon.png"
-          curl -H "Content-Type: application/json" \
-               -d "{\"username\": \"Smart-Archiver\", \"avatar_url\": \"${ICON_URL}\", \"content\": \"✅ **録画完了**\\n🎥 対象動画: \`${VIDEO_ID}\` の録画とPDFレポート生成が完了しました！\\n🔗 [ここをクリックしてレポートを確認](${PAGES_URL})\"}" \
-               $DISCORD_WEBHOOK
+          PAYLOAD=$(jq -n --arg username "Smart-Archiver" \
+                           --arg avatar "$ICON_URL" \
+                           --arg content "✅ **録画完了**\n🎥 対象動画: **${VIDEO_TITLE:-$VIDEO_ID}** の録画とPDFレポート生成が完了しました！\n🔗 [ここをクリックしてレポートを確認]($PAGES_URL)" \
+                           '{username: $username, avatar_url: $avatar, content: $content}')
+          curl -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK"
