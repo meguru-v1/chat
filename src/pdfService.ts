@@ -232,7 +232,7 @@ export async function generatePdf(
     doc.save();
     doc.rect(0, 0, doc.page.width, 80).fill('#1E293B');
     doc.fillColor('#FFFFFF').fontSize(20)
-      .text('📊 YouTube チャットアーカイブ レポート', 50, 18, { align: 'center' });
+      .text('[ YouTube チャットアーカイブ レポート ]', 50, 18, { align: 'center' });
     doc.fontSize(11).fillColor('#94A3B8')
       .text(videoTitle, 50, 45, { align: 'center' });
     doc.restore();
@@ -249,7 +249,7 @@ export async function generatePdf(
     doc.moveDown(1);
 
     // ======== 統計セクション ========
-    drawSectionHeader(doc, '📈 統計サマリー', '#2563EB');
+    drawSectionHeader(doc, '[ 統計サマリー ]', '#2563EB');
     doc.moveDown(0.3);
 
     doc.fontSize(11);
@@ -257,19 +257,19 @@ export async function generatePdf(
     doc.text(`記録時間:         ${stats.durationMinutes} 分`);
     doc.text(`平均流速:         ${stats.avgPerMinute} 件/分`);
     doc.text(
-      `🔥 ピーク時間帯:   ${stats.peakMinute.time} (${stats.peakMinute.count} 件)`
+      `ピーク時間帯:     ${stats.peakMinute.time} (${stats.peakMinute.count} 件)`
     );
 
     doc.moveDown(1);
 
     // ======== 発言者ランキング ========
     if (stats.topAuthors.length > 0) {
-      drawSectionHeader(doc, '🏆 発言者ランキング TOP10', '#7C3AED');
+      drawSectionHeader(doc, '[ 発言者ランキング TOP10 ]', '#7C3AED');
       doc.moveDown(0.3);
       doc.fontSize(10);
 
       stats.topAuthors.forEach((author, i) => {
-        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+        const medal = i === 0 ? '[1]' : i === 1 ? '[2]' : i === 2 ? '[3]' : ` ${i + 1}.`;
         const barLen = Math.round((author.count / stats.topAuthors[0].count) * 20);
         const bar = '█'.repeat(barLen);
         doc.text(`${medal} ${author.name.padEnd(20)} ${bar} ${author.count}件`);
@@ -279,7 +279,7 @@ export async function generatePdf(
     }
 
     // ======== 流速グラフ ========
-    drawSectionHeader(doc, '📊 タイムライン チャット密度', '#059669');
+    drawSectionHeader(doc, '[ タイムライン チャット密度 ]', '#059669');
     doc.moveDown(0.3);
 
     doc.fontSize(8);
@@ -294,7 +294,7 @@ export async function generatePdf(
 
     // ======== チャットログ ========
     doc.addPage();
-    drawSectionHeader(doc, '💬 チャットログ', '#DC2626');
+    drawSectionHeader(doc, '[ チャットログ ]', '#DC2626');
     doc.moveDown(0.3);
 
     doc.fontSize(9);
