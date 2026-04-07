@@ -142,7 +142,35 @@ function updateHistory(
   } else {
     h = [newEntry, ...h];
   }
-  fs.writeFileSync(hPath, JSON.stringify(h.slice(0, 50), null, 2));
+
+  // ===== PDFの自動クリーンアップ（2週間または50件超過） =====
+  const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const keptHistory: any[] = [];
+
+  for (let i = 0; i < h.length; i++) {
+    const entry = h[i];
+    const ageMs = now - new Date(entry.date).getTime();
+    
+    // 2週間以上前、または新しい順から数えて50件目以降なら削除対象
+    if (ageMs > TWO_WEEKS_MS || i >= 50) {
+      if (entry.pdfPath) {
+        const fullOldPath = path.join(__dirname, '..', 'public', entry.pdfPath);
+        if (fs.existsSync(fullOldPath)) {
+          console.log(`🗑️ 古いレポートを自動削除しました: ${entry.pdfPath}`);
+          try {
+            fs.unlinkSync(fullOldPath);
+          } catch (e: any) {
+            console.error(`削除エラー (${entry.pdfPath}):`, e.message);
+          }
+        }
+      }
+    } else {
+      keptHistory.push(entry);
+    }
+  }
+
+  fs.writeFileSync(hPath, JSON.stringify(keptHistory, null, 2));
 }
 
 // ---------- シグナルハンドラ ----------------------------------------
