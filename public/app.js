@@ -106,12 +106,12 @@ function createSessionElement(session, displayState) {
   let actionHtml = '';
 
   if (displayState === 'recording') {
-    badgeHtml = `${cloudBadge}<div class="badge recording"><i class="fas fa-circle"></i> EXECUTING</div>`;
+    badgeHtml = `<div class="badge-group">${cloudBadge}<div class="badge recording"><i class="fas fa-circle"></i> EXECUTING</div></div>`;
     metaHtml = `<span><i class="far fa-clock"></i> ${formatDate(session.startedAt)}</span>`;
     actionHtml = `<button class="btn-danger" onclick="stopActionsRun('${session.githubRunId}')"><i class="fas fa-stop"></i> 停止</button>`;
   } else if (displayState === 'error') {
     // ③ エラー状態の赤バッジ
-    badgeHtml = `${cloudBadge}<div class="badge" style="background:rgba(239,68,68,0.2);color:#ef4444;"><i class="fas fa-times-circle"></i> ERROR</div>`;
+    badgeHtml = `<div class="badge-group">${cloudBadge}<div class="badge" style="background:rgba(239,68,68,0.2);color:#ef4444;"><i class="fas fa-times-circle"></i> ERROR</div></div>`;
     metaHtml = `
       <span><i class="fab fa-youtube"></i> ${session.videoId}</span>
       <span><i class="far fa-calendar-alt"></i> ${formatDate(session.date)}</span>
@@ -119,7 +119,7 @@ function createSessionElement(session, displayState) {
     `;
     actionHtml = '';
   } else {
-    badgeHtml = `${cloudBadge}<div class="badge success"><i class="fas fa-check-circle"></i> FINISHED</div>`;
+    badgeHtml = `<div class="badge-group">${cloudBadge}<div class="badge success"><i class="fas fa-check-circle"></i> FINISHED</div></div>`;
     metaHtml = `
       <span><i class="fab fa-youtube"></i> ${session.videoId}</span>
       <span><i class="far fa-calendar-alt"></i> ${formatDate(session.date)}</span>
