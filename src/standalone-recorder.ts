@@ -263,19 +263,20 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
     const responseData = err.response?.data;
     const reason: string | undefined = responseData?.error?.errors?.[0]?.reason;
 
-    // ❌ 403 = クォータ切れ or APIキー無効 → retryしても回復しないので即終了
-    if (status === 403) {
-      console.log(`🛑 クォータ切れ or 権限不足 (403: ${reason ?? 'unknown'}) — 録画を終了します。`);
-      return finish('api_error_403');
+    // ❌ クォータ完全消費 → retryしても絶対に回復しないので即終了
+    if (status === 403 && (reason === 'quotaExceeded' || reason === 'dailyLimitExceeded')) {
+      console.log(`🛑 APIクォータが上限に達しました (403: ${reason}) — 録画を終了します。`);
+      return finish('api_error_quota');
     }
 
-    // ⏳ 配信切断 or チャットID期限切れ → 最大10回・30秒待機して再接続を試みる
+    // ⏳ 配信切断・一時的アクセス拒否・チャットID期限切れ → 最大10回・30秒待ちで再接続
     //    - liveChatEnded: OBSドロップや長時間配信中のID自動更新が原因の場合がある
     //    - 404:          チャットIDが古くなり新しいIDに切り替わった場合
-    if (reason === 'liveChatEnded' || status === 404) {
+    //    - 403 (forbidden等): チャットが一時的に無効化された場合
+    if (reason === 'liveChatEnded' || status === 404 || status === 403) {
       if (fatalRetryCount < MAX_FATAL_RETRIES) {
         fatalRetryCount++;
-        console.warn(`⚠️ チャット切断シグナルを受信 (HTTP ${status}: ${reason ?? 'liveChatEnded'}). 一時的なドロップやID更新の可能性があるため30秒待機して再確認します (${fatalRetryCount}/${MAX_FATAL_RETRIES})...`);
+        console.warn(`⚠️ チャット切断シグナルを受信 (HTTP ${status}: ${reason ?? 'unknown'}). 一時的なドロップやID更新の可能性があるため30秒待機して再確認します (${fatalRetryCount}/${MAX_FATAL_RETRIES})...`);
         if (!finishCalled) {
           pollTimeout = setTimeout(async () => {
             try {
@@ -292,10 +293,9 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
                 pollChat(liveChatId, key, undefined);
               }
             } catch (e: any) {
-              if (e.response?.status === 403) {
-                // クォータ切れが確定したのでここで終了
+              if (e.response?.status === 403 && (e.response?.data?.error?.errors?.[0]?.reason === 'quotaExceeded' || e.response?.data?.error?.errors?.[0]?.reason === 'dailyLimitExceeded')) {
                 console.log('🛑 再確認中にクォータ切れを検出 — 録画を終了します。');
-                finish('api_error_403');
+                finish('api_error_quota');
               } else {
                 // 動画情報取得に失敗しても念のため元IDでリトライを継続
                 console.warn(`⚠️ ライブ情報の再取得に失敗。元のIDで再試行します: ${e.message}`);
