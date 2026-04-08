@@ -116,13 +116,35 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
           VIDEO_ID: ${{ github.event.inputs.video_id || github.event.client_payload.video_id }}
           REPO_NAME: ${{ github.repository }}
+          RECORD_MSG_COUNT: ${{ env.RECORD_MSG_COUNT }}
+          RECORD_DURATION: ${{ env.RECORD_DURATION_MINS }}
+          RECORD_REASON: ${{ env.RECORD_REASON }}
         run: |
           if [ -z "$DISCORD_WEBHOOK" ]; then echo "Webhook is not set. Skipping."; exit 0; fi
           PAGES_URL="https://${REPO_NAME%%/*}.github.io/${REPO_NAME#*/}/"
           ICON_URL="${PAGES_URL}icons/icon.png"
+          
+          # 終了理由からステータス表示を決定
+          if [ "$RECORD_REASON" = "stream_ended" ] || [ "$RECORD_REASON" = "stream_ended_confirmed" ] || [ "$RECORD_REASON" = "test_run" ] || [ -z "$RECORD_REASON" ]; then
+             STATUS_TITLE="✅ **録画完了**"
+          else
+             STATUS_TITLE="⚠️ **録画終了 (システム停止)**"
+          fi
+          
+          DESC="🎥 対象動画: **${VIDEO_TITLE:-$VIDEO_ID}**"
+          if [ -n "$RECORD_MSG_COUNT" ]; then
+             DESC="$DESC\n📊 取得コメント数: **${RECORD_MSG_COUNT}** 件"
+          fi
+          if [ -n "$RECORD_DURATION" ]; then
+             DESC="$DESC\n⏱️ 録画時間: **${RECORD_DURATION}** 分"
+          fi
+          if [ -n "$RECORD_REASON" ] && [ "$STATUS_TITLE" = "⚠️ **録画終了 (システム停止)**" ]; then
+             DESC="$DESC\nℹ️ 停止理由: \`${RECORD_REASON}\`"
+          fi
+          DESC="$DESC\n🔗 [ここをクリックしてレポートを確認]($PAGES_URL)"
+          
           PAYLOAD=$(jq -n --arg username "Smart-Archiver" \
                            --arg avatar "$ICON_URL" \
-                           --arg title "${VIDEO_TITLE:-$VIDEO_ID}" \
-                           --arg url "$PAGES_URL" \
-                           '{username: $username, avatar_url: $avatar, content: "✅ **録画完了**\n🎥 対象動画: **\($title)** の録画とPDFレポート生成が完了しました！\n🔗 [ここをクリックしてレポートを確認](\($url))"}')
+                           --arg content "$STATUS_TITLE\n$DESC" \
+                           '{username: $username, avatar_url: $avatar, content: $content}')
           curl -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK"

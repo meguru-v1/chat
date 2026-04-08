@@ -18,8 +18,8 @@ import { generatePdf } from './pdfService';
 
 // ---------- 設定 ----------
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
-/** チャット無更新が続いた場合のアイドルタイムアウト (60分) */
-const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+/** チャット無更新が続いた場合のアイドルタイムアウト (120分) */
+const IDLE_TIMEOUT_MS = 120 * 60 * 1000;
 /** axios の通信タイムアウト (10秒) */
 const AXIOS_TIMEOUT_MS = 10_000;
 
@@ -106,6 +106,13 @@ async function finish(reason: string) {
   } else {
     updateHistory(videoId, 0, '', videoTitle, 'error', reason);
     console.log('⚠️ メッセージ0件のため、エラーとして履歴に記録しました。');
+  }
+
+  if (process.env.GITHUB_ENV) {
+    const durationMins = Math.floor((Date.now() - startTime) / 60000);
+    fs.appendFileSync(process.env.GITHUB_ENV, `RECORD_MSG_COUNT=${messages.length}\n`);
+    fs.appendFileSync(process.env.GITHUB_ENV, `RECORD_DURATION_MINS=${durationMins}\n`);
+    fs.appendFileSync(process.env.GITHUB_ENV, `RECORD_REASON=${reason}\n`);
   }
 
   // シグナルハンドラから呼ばれた場合は非同期で終了できないので同期的に終了
