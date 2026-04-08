@@ -53,6 +53,8 @@ let messageCount = 0;
 let videoTitle = 'タイトル不明';
 let pollTimeout: NodeJS.Timeout | null = null;
 let idleTimer: NodeJS.Timeout | null = null;
+let fatalRetryCount = 0;
+const MAX_FATAL_RETRIES = 10;
 const startTime = Date.now();
 
 // ---------- ユーティリティ ----------
@@ -222,6 +224,8 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
     const res = await ytAxios.get(url);
     const data = res.data;
 
+    fatalRetryCount = 0; // 正常に通信できた場合はリトライカウントをリセット
+
     if (data.items?.length) {
       resetIdleTimer();
       const newMsgs = data.items.map((item: any) => {
@@ -259,24 +263,37 @@ async function pollChat(liveChatId: string, key: string, pageToken?: string) {
     const responseData = err.response?.data;
     const reason: string | undefined = responseData?.error?.errors?.[0]?.reason;
 
-    // 配信終了 → 正常終了
-    if (reason === 'liveChatEnded') {
-      console.log('✅ 配信が終了しました。録画を正常終了します。');
-      return finish('stream_ended');
+    // 配信終了/切断シグナル時の再試行（一時的なOBSドロップやチャットID（長時間の配信）ローテーション対策）
+    if (reason === 'liveChatEnded' || status === 403 || status === 404) {
+      if (fatalRetryCount < MAX_FATAL_RETRIES) {
+        fatalRetryCount++;
+        console.warn(`⚠️ チャット終了/切断を受信 (${status}: ${reason}). 一時的なドロップやID変更の可能性があるため30秒待機して再確認します (${fatalRetryCount}/${MAX_FATAL_RETRIES})...`);
+        if (!finishCalled) {
+          pollTimeout = setTimeout(async () => {
+            try {
+              // ライブチャットIDが変わっているか再確認（8時間超えの配信などで自動更新されるため）
+              const info = await getLiveChatInfo(videoId, key);
+              if (info.chatId && info.chatId !== liveChatId) {
+                 console.log(`♻️ ライブチャットIDの変更（ローテーション）を検知！ 新ID: ${info.chatId} で録画を再開します。`);
+                 fatalRetryCount = 0; // 完全に復帰したのでリセット
+                 pollChat(info.chatId, key, undefined);
+              } else {
+                 pollChat(liveChatId, key, pageToken); 
+              }
+            } catch (e) {
+                 // 動画情報取得に失敗しても念のため元IDでリトライを継続
+                 pollChat(liveChatId, key, pageToken);
+            }
+          }, 30_000);
+        }
+        return;
+      }
+      
+      console.log(`🛑 ${MAX_FATAL_RETRIES}回再試行しましたが回復しないため終了します。`);
+      return finish(`api_error_${reason || status || 'fatal'}`);
     }
 
-    console.error(`❌ APIエラー (Status: ${status ?? 'timeout'})`);
-
-    if (status === 403) {
-      console.log('🛑 クォータ切れ or 権限不足 — 録画を終了します。');
-      return finish('api_error_403');
-    }
-    if (status === 404) {
-      console.log('🛑 チャットが見つかりません — 録画を終了します。');
-      return finish('api_error_404');
-    }
-
-    // タイムアウト・一時的エラー → 20秒後にリトライ
+    // タイムアウト・一時的エラー(500等) → 20秒後にリトライ
     console.warn(`⚠️ 通信エラー (20秒後に再試行): ${err.message}`);
     if (!finishCalled) {
       pollTimeout = setTimeout(() => pollChat(liveChatId, key, pageToken), 20_000);
