@@ -43,8 +43,9 @@ jobs:
           ICON_URL="${PAGES_URL}icons/icon.png"
           PAYLOAD=$(jq -n --arg username "Smart-Archiver" \
                            --arg avatar "$ICON_URL" \
-                           --arg content "🔴 **録画開始**\n🎥 対象動画: **${VIDEO_TITLE:-$VIDEO_ID}** の監視と録画プロセスを開始しました！\n🔗 [アプリを開いて進捗を確認する]($PAGES_URL)" \
-                           '{username: $username, avatar_url: $avatar, content: $content}')
+                           --arg title "${VIDEO_TITLE:-$VIDEO_ID}" \
+                           --arg url "$PAGES_URL" \
+                           '{username: $username, avatar_url: $avatar, content: "🔴 **録画開始**\n🎥 対象動画: **\($title)** の監視と録画プロセスを開始しました！\n🔗 [アプリを開いて進捗を確認する](\($url))"}')
           curl -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK"
 
       - name: 📥 リポジトリをチェックアウト
@@ -114,6 +115,7 @@ jobs:
           ICON_URL="${PAGES_URL}icons/icon.png"
           PAYLOAD=$(jq -n --arg username "Smart-Archiver" \
                            --arg avatar "$ICON_URL" \
-                           --arg content "✅ **録画完了**\n🎥 対象動画: **${VIDEO_TITLE:-$VIDEO_ID}** の録画とPDFレポート生成が完了しました！\n🔗 [ここをクリックしてレポートを確認]($PAGES_URL)" \
-                           '{username: $username, avatar_url: $avatar, content: $content}')
+                           --arg title "${VIDEO_TITLE:-$VIDEO_ID}" \
+                           --arg url "$PAGES_URL" \
+                           '{username: $username, avatar_url: $avatar, content: "✅ **録画完了**\n🎥 対象動画: **\($title)** の録画とPDFレポート生成が完了しました！\n🔗 [ここをクリックしてレポートを確認](\($url))"}')
           curl -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK"
