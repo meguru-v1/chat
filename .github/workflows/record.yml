@@ -75,11 +75,32 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin main || true
+          
           git add public/reports/ public/sessions.json || true
           git commit -m "chore: 録画レポートを追加 (${{ github.event.inputs.video_id || github.event.client_payload.video_id }})" || echo "No changes to commit"
-          git push || echo "Push failed (conflict), retrying..."
-          git pull --rebase origin main && git push || true
+          
+          # 複数タスクが同時完了した際の sessions.json 競合を防ぐためのリライループ
+          for i in {1..5}; do
+            git fetch origin main
+            if git push; then
+              echo "✅ Push successful!"
+              exit 0
+            fi
+            
+            echo "⚠️ Push failed due to conflict. Resolving sessions.json safely without rebase conflict..."
+            OUR_SESSION=$(jq '.[0]' public/sessions.json)
+            
+            # softリセットでローカル変更(生成したPDFなど)は保持しつつHEADを最新に合わせる
+            git reset --soft origin/main
+            
+            # sessions.jsonだけは最新のものを上書き取得し、再度jqで自分自身のレコードを先頭にねじ込む
+            git checkout origin/main -- public/sessions.json
+            jq --argjson newEntry "$OUR_SESSION" '[$newEntry] + .' public/sessions.json > tmp.json && mv tmp.json public/sessions.json
+            
+            git add public/reports/ public/sessions.json || true
+            git commit -m "chore: 録画レポートを追加 (${{ github.event.inputs.video_id || github.event.client_payload.video_id }})" || true
+            sleep $((RANDOM % 3 + 1))
+          done
 
       - name: 💬 Discord に完了通知を送信
         if: always()
