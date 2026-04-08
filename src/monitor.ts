@@ -143,8 +143,10 @@ async function checkChannel(channel: Channel, activeRecordings: Set<string>) {
           continue;
         }
 
-        console.log(`  🔴 ライブ放送を確認！ 録画を開始します...`);
-        await triggerRecording(videoId, channel.name, entry.title);
+        // ✅ RSSではなく YouTube API から取得した最新タイトルを使用（毎日変わる配信タイトルに対応）
+        const apiTitle = videoData.snippet?.title ?? entry.title;
+        console.log(`  🔴 ライブ放送を確認！ タイトル: ${apiTitle} — 録画を開始します...`);
+        await triggerRecording(videoId, channel.name, apiTitle);
         triggeredIds.add(videoId);
 
       } else if (isUpcoming) {
@@ -160,8 +162,9 @@ async function checkChannel(channel: Channel, activeRecordings: Set<string>) {
               console.log(`  ⏭️ 既に録画中のためスキップ: ${videoId}`);
               continue;
             }
-            console.log(`  🟡 待機所を確認！ 開始まであと${Math.round(minutesUntilStart)}分。先行録画を開始します...`);
-            await triggerRecording(videoId, channel.name, entry.title);
+            const apiTitle = videoData.snippet?.title ?? entry.title;
+            console.log(`  🟡 待機所を確認！ タイトル: ${apiTitle} — 開始まであと${Math.round(minutesUntilStart)}分。先行録画を開始します...`);
+            await triggerRecording(videoId, channel.name, apiTitle);
             triggeredIds.add(videoId);
           } else if (minutesUntilStart > 5) {
             console.log(`  ⏳ 待機所を確認。配信まであと ${Math.round(minutesUntilStart)} 分。次の巡回を待ちます。`);
