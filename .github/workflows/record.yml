@@ -39,11 +39,18 @@ jobs:
           # Webhookが設定されていない場合はスキップ
           if [ -z "$DISCORD_WEBHOOK" ]; then echo "Webhook is not set. Skipping."; exit 0; fi
           
+          # 手動トリガー等でタイトルが取得できていない場合、NoEmbed APIから取得を試みる
+          FETCHED_TITLE="$VIDEO_TITLE"
+          if [ -z "$FETCHED_TITLE" ]; then
+            FETCHED_TITLE=$(curl -s "https://noembed.com/embed?url=https://www.youtube.com/watch?v=$VIDEO_ID" | jq -r '.title // empty')
+          fi
+          FINAL_TITLE="${FETCHED_TITLE:-$VIDEO_ID}"
+          
           PAGES_URL="https://${REPO_NAME%%/*}.github.io/${REPO_NAME#*/}/"
           ICON_URL="${PAGES_URL}icons/icon.png"
           PAYLOAD=$(jq -n --arg username "Smart-Archiver" \
                            --arg avatar "$ICON_URL" \
-                           --arg title "${VIDEO_TITLE:-$VIDEO_ID}" \
+                           --arg title "$FINAL_TITLE" \
                            --arg url "$PAGES_URL" \
                            '{username: $username, avatar_url: $avatar, content: "🔴 **録画開始**\n🎥 対象動画: **\($title)** の監視と録画プロセスを開始しました！\n🔗 [アプリを開いて進捗を確認する](\($url))"}')
           curl -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK"
