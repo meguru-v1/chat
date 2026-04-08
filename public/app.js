@@ -110,12 +110,30 @@ function createSessionElement(session, displayState) {
     metaHtml = `<span><i class="far fa-clock"></i> ${formatDate(session.startedAt)}</span>`;
     actionHtml = `<button class="btn-danger" onclick="stopActionsRun('${session.githubRunId}')"><i class="fas fa-stop"></i> 停止</button>`;
   } else if (displayState === 'error') {
+    // エラー理由の日本語マッピング
+    const reasonMap = {
+      'api_error_quota':         'クォータ切れ',
+      'api_error_403':           'APIアクセス拒否',
+      'api_error_404':           'チャット未検出',
+      'stream_ended_confirmed':  '配信終了を確認',
+      'pdf_generation_failed':   'PDF生成失敗',
+      'idle_timeout':            '更新なしタイムアウト',
+      'max_duration':            '最大録画時間超過',
+      'sigterm_forced':          'Actions強制終了',
+      'sigint_manual':           '手動停止',
+    };
+    const reasonLabel = session.reason ? (reasonMap[session.reason] || session.reason) : null;
+    const reasonHtml = reasonLabel
+      ? `<span style="color:#f59e0b;"><i class="fas fa-info-circle"></i> ${reasonLabel}</span>`
+      : '';
+
     // ③ エラー状態の赤バッジ
     badgeHtml = `<div class="badge-group">${cloudBadge}<div class="badge" style="background:rgba(239,68,68,0.2);color:#ef4444;"><i class="fas fa-times-circle"></i> ERROR</div></div>`;
     metaHtml = `
       <span><i class="fab fa-youtube"></i> ${session.videoId}</span>
       <span><i class="far fa-calendar-alt"></i> ${formatDate(session.date)}</span>
       <span style="color:#ef4444;"><i class="fas fa-exclamation-triangle"></i> ${session.messageCount}件取得</span>
+      ${reasonHtml}
     `;
     actionHtml = '';
   } else {

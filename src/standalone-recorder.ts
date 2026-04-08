@@ -101,11 +101,10 @@ async function finish(reason: string) {
       console.log(`✅ レポート生成成功: ${pdfPath}`);
     } catch (err) {
       console.error('❌ PDF生成失敗:', err);
-      // PDF生成失敗時も、件数は記録しておく
-      updateHistory(videoId, messages.length, '', videoTitle, 'error');
+      updateHistory(videoId, messages.length, '', videoTitle, 'error', 'pdf_generation_failed');
     }
   } else {
-    updateHistory(videoId, 0, '', videoTitle, 'error');
+    updateHistory(videoId, 0, '', videoTitle, 'error', reason);
     console.log('⚠️ メッセージ0件のため、エラーとして履歴に記録しました。');
   }
 
@@ -119,7 +118,8 @@ function updateHistory(
   count: number,
   p: string,
   title: string,
-  status: 'completed' | 'error'
+  status: 'completed' | 'error',
+  reason?: string
 ) {
   const hPath = path.join(__dirname, '../public/sessions.json');
   let h: any[] = [];
@@ -129,8 +129,8 @@ function updateHistory(
     h = [];
   }
 
-  const normalizedPath = p ? p.replace(/^public\//, '') : '';
-  const newEntry = {
+  const normalizedPath = p ? p.replace(/^\/public\//, '').replace(/^public\//, '') : '';
+  const newEntry: any = {
     videoId: vId,
     title,
     date: new Date().toISOString(),
@@ -138,6 +138,8 @@ function updateHistory(
     pdfPath: normalizedPath,
     status,
   };
+  // エラー理由をUI表示用に記録
+  if (reason) newEntry.reason = reason;
 
   if (normalizedPath) {
     h = [newEntry, ...h.filter((s: any) => s.pdfPath !== normalizedPath)];
