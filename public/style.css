@@ -134,21 +134,25 @@ body {
    CARD
    ============================================================ */
 .card {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-lg);
   padding: 1.5rem;
-  box-shadow: var(--shadow);
-  transition: box-shadow var(--transition), transform var(--transition);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: all var(--transition);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  position: relative;
+  overflow: hidden;
 }
 
 @media (min-width: 640px) {
   .card { padding: 1.75rem 2rem; }
   .card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 14px 44px rgba(0,0,0,0.5);
+    transform: translateY(-4px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.15);
   }
 }
 
@@ -248,9 +252,32 @@ button {
 .btn-primary {
   background: linear-gradient(135deg, var(--secondary), var(--primary));
   color: #0b0d18;
-  box-shadow: 0 4px 14px var(--primary-glow);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 15px rgba(0, 210, 255, 0.3);
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
 }
-.btn-primary:hover  { transform: translateY(-2px); box-shadow: 0 6px 20px var(--primary-glow); }
+
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: -1;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 210, 255, 0.5);
+  color: #000;
+}
+
+.btn-primary:hover::before {
+  opacity: 1;
+}
 .btn-primary:active { transform: translateY(1px); }
 
 .btn-danger {
