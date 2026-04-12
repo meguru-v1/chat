@@ -126,25 +126,41 @@ jobs:
           
           # 終了理由からステータス表示を決定
           if [ "$RECORD_REASON" = "stream_ended" ] || [ "$RECORD_REASON" = "stream_ended_confirmed" ] || [ "$RECORD_REASON" = "test_run" ] || [ -z "$RECORD_REASON" ]; then
-             STATUS_TITLE="✅ **録画完了**"
+             STATUS_TITLE="✅ 録画完了"
+             COLOR=3066993  # 緑色
           else
-             STATUS_TITLE="⚠️ **録画終了 (システム停止)**"
+             STATUS_TITLE="⚠️ 録画異常終了"
+             COLOR=15158332 # 赤色
           fi
           
-          DESC="🎥 対象動画: **${VIDEO_TITLE:-$VIDEO_ID}**"
+          DESC="🎥 **対象動画:** ${VIDEO_TITLE:-$VIDEO_ID}"
           if [ -n "$RECORD_MSG_COUNT" ]; then
-             DESC="$DESC\n📊 取得コメント数: **${RECORD_MSG_COUNT}** 件"
+             DESC="$DESC\n📊 **取得コメント数:** ${RECORD_MSG_COUNT} 件"
           fi
           if [ -n "$RECORD_DURATION" ]; then
-             DESC="$DESC\n⏱️ 録画時間: **${RECORD_DURATION}** 分"
+             DESC="$DESC\n⏱️ **録画時間:** ${RECORD_DURATION} 分"
           fi
-          if [ -n "$RECORD_REASON" ] && [ "$STATUS_TITLE" = "⚠️ **録画終了 (システム停止)**" ]; then
-             DESC="$DESC\nℹ️ 停止理由: \`${RECORD_REASON}\`"
+          if [ -n "$RECORD_REASON" ] && [ "$STATUS_TITLE" = "⚠️ 録画異常終了" ]; then
+             DESC="$DESC\nℹ️ **停止理由:** \`${RECORD_REASON}\`"
           fi
-          DESC="$DESC\n🔗 [ここをクリックしてレポートを確認]($PAGES_URL)"
+          DESC="$DESC\n\n🔗 **[ここをクリックしてレポートを確認]($PAGES_URL)**"
+          
+          THUMB_URL="https://img.youtube.com/vi/${VIDEO_ID}/maxresdefault.jpg"
           
           PAYLOAD=$(jq -n --arg username "Smart-Archiver" \
                            --arg avatar "$ICON_URL" \
-                           --arg content "$STATUS_TITLE\n$DESC" \
-                           '{username: $username, avatar_url: $avatar, content: $content}')
+                           --arg title "$STATUS_TITLE" \
+                           --arg desc "$DESC" \
+                           --arg thumb "$THUMB_URL" \
+                           --argjson color "$COLOR" \
+                           '{
+                             username: $username,
+                             avatar_url: $avatar,
+                             embeds: [{
+                               title: $title,
+                               description: $desc,
+                               color: $color,
+                               image: { url: $thumb }
+                             }]
+                           }')
           curl -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK"
