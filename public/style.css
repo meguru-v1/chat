@@ -120,14 +120,17 @@ body {
 }
 
 .version-tag {
-  font-size: 0.65rem;
-  color: var(--success);
-  background: rgba(0,230,118,0.1);
-  border: 1px solid rgba(0,230,118,0.25);
-  padding: 2px 7px;
+  font-size: 0.75rem;
+  color: #fff;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  padding: 4px 12px;
   border-radius: 20px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.5px;
+  box-shadow: 0 2px 10px rgba(0, 210, 255, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
 }
 
 /* ============================================================
@@ -157,17 +160,22 @@ body {
 }
 
 .card h2 {
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 1.15rem;
+  font-weight: 800;
   margin-bottom: 1.25rem;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  color: var(--text);
-  letter-spacing: 0.2px;
+  gap: 0.6rem;
+  color: #fff;
+  letter-spacing: 0.3px;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
 }
 
-.card h2 > i { color: var(--primary); }
+.card h2 > i {
+  color: var(--primary);
+  font-size: 1.3rem;
+  filter: drop-shadow(0 0 8px rgba(0,210,255,0.6));
+}
 
 .card h3 {
   font-size: 0.85rem;
