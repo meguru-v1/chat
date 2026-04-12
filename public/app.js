@@ -153,19 +153,24 @@ function createSessionElement(session, displayState) {
   }
 
   const displayName = session.title || session.videoId;
+  // YouTubeのサムネイルを取得 (高画質が存在しない場合はデフォルトのmqdefaultを使用)
+  const thumbUrl = `https://img.youtube.com/vi/${session.videoId}/mqdefault.jpg`;
 
   li.innerHTML = `
-    <div class="session-info">
-      <div class="session-id">
-        <span class="video-title-display" data-video-id="${session.videoId}">${displayName}</span>
-        ${badgeHtml}
+    <img class="session-thumb" src="${thumbUrl}" alt="Thumbnail" loading="lazy" onerror="this.src='icons/icon.png'">
+    <div class="session-item-body">
+      <div class="session-info">
+        <div class="session-id">
+          <span class="video-title-display" data-video-id="${session.videoId}">${displayName}</span>
+          ${badgeHtml}
+        </div>
+        <div class="session-meta">
+          ${metaHtml}
+        </div>
       </div>
-      <div class="session-meta">
-        ${metaHtml}
+      <div class="session-action">
+        ${actionHtml}
       </div>
-    </div>
-    <div class="session-action">
-      ${actionHtml}
     </div>
   `;
   return li;
