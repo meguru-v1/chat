@@ -157,7 +157,7 @@ async function checkChannel(channel: Channel, activeRecordings: Set<string>) {
           const now = Date.now();
           const minutesUntilStart = (startTime - now) / (60 * 1000);
 
-          if (minutesUntilStart <= 5 && minutesUntilStart > -5) {
+          if (minutesUntilStart <= 120 && minutesUntilStart > -5) {
             if (activeRecordings.has(videoId)) {
               console.log(`  ⏭️ 既に録画中のためスキップ: ${videoId}`);
               continue;
@@ -166,7 +166,7 @@ async function checkChannel(channel: Channel, activeRecordings: Set<string>) {
             console.log(`  🟡 待機所を確認！ タイトル: ${apiTitle} — 開始まであと${Math.round(minutesUntilStart)}分。先行録画を開始します...`);
             await triggerRecording(videoId, channel.name, apiTitle);
             triggeredIds.add(videoId);
-          } else if (minutesUntilStart > 5) {
+          } else if (minutesUntilStart > 120) {
             console.log(`  ⏳ 待機所を確認。配信まであと ${Math.round(minutesUntilStart)} 分。次の巡回を待ちます。`);
           } else {
             console.log(`  ⏳ 待機所あり（開始予定を過ぎています）。次の巡回を待ちます。`);
