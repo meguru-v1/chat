@@ -144,7 +144,7 @@ function createSessionElement(session, displayState) {
       <span><i class="far fa-comments"></i> ${session.messageCount}件</span>
     `;
     const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
-    const pdfUrl = `${baseUrl}/${session.pdfPath}`;
+    const pdfUrl = `${baseUrl}/${session.pdfPath.split('/').map(encodeURIComponent).join('/')}`;
     actionHtml = `
       <a href="${pdfUrl}" target="_blank" class="btn-primary" style="text-decoration:none; display:inline-block; padding:8px 12px; border-radius:6px; font-size:13px">
         <i class="fas fa-file-pdf"></i> レポート表示
@@ -152,7 +152,12 @@ function createSessionElement(session, displayState) {
     `;
   }
 
-  const displayName = session.title || session.videoId;
+  let displayName = session.title || session.videoId;
+  // タイトルが特殊な空白、空文字、またはタイトル不明の場合は videoId をセットして fallback の NoEmbed API 取得を誘発する
+  if (!session.title || session.title.trim() === '' || session.title === '‍' || session.title === 'タイトル不明') {
+    displayName = session.videoId;
+  }
+
   // YouTubeのサムネイルを取得 (高画質が存在しない場合はデフォルトのmqdefaultを使用)
   const thumbUrl = `https://img.youtube.com/vi/${session.videoId}/mqdefault.jpg`;
 
