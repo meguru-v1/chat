@@ -48,11 +48,21 @@ const addChannelForm = document.getElementById('addChannelForm');
 const channelUrlInput = document.getElementById('channelUrlInput');
 
 // ---------------------------
-// Utils
+// ユーティリティ関数群
 // ---------------------------
+function escapeHTML(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function showToast(message, type = 'success') {
   toast.className = `show ${type}`;
-  toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> ${message}`;
+  toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> ${escapeHTML(message)}`;
   setTimeout(() => {
     toast.className = '';
   }, 4000);
@@ -122,7 +132,7 @@ function createSessionElement(session, displayState) {
       'sigterm_forced':          'Actions強制終了',
       'sigint_manual':           '手動停止',
     };
-    const reasonLabel = session.reason ? (reasonMap[session.reason] || session.reason) : null;
+    const reasonLabel = escapeHTML(session.reason ? (reasonMap[session.reason] || session.reason) : null);
     const reasonHtml = reasonLabel
       ? `<span style="color:#f59e0b;"><i class="fas fa-info-circle"></i> ${reasonLabel}</span>`
       : '';
@@ -130,7 +140,7 @@ function createSessionElement(session, displayState) {
     // ③ エラー状態の赤バッジ
     badgeHtml = `<div class="badge-group">${cloudBadge}<div class="badge" style="background:rgba(239,68,68,0.2);color:#ef4444;"><i class="fas fa-times-circle"></i> ERROR</div></div>`;
     metaHtml = `
-      <span><i class="fab fa-youtube"></i> ${session.videoId}</span>
+      <span><i class="fab fa-youtube"></i> ${escapeHTML(session.videoId)}</span>
       <span><i class="far fa-calendar-alt"></i> ${formatDate(session.date)}</span>
       <span style="color:#ef4444;"><i class="fas fa-exclamation-triangle"></i> ${session.messageCount}件取得</span>
       ${reasonHtml}
@@ -139,7 +149,7 @@ function createSessionElement(session, displayState) {
   } else {
     badgeHtml = `<div class="badge-group">${cloudBadge}<div class="badge success"><i class="fas fa-check-circle"></i> FINISHED</div></div>`;
     metaHtml = `
-      <span><i class="fab fa-youtube"></i> ${session.videoId}</span>
+      <span><i class="fab fa-youtube"></i> ${escapeHTML(session.videoId)}</span>
       <span><i class="far fa-calendar-alt"></i> ${formatDate(session.date)}</span>
       <span><i class="far fa-comments"></i> ${session.messageCount}件</span>
     `;
@@ -159,14 +169,14 @@ function createSessionElement(session, displayState) {
   }
 
   // YouTubeのサムネイルを取得 (高画質が存在しない場合はデフォルトのmqdefaultを使用)
-  const thumbUrl = `https://img.youtube.com/vi/${session.videoId}/mqdefault.jpg`;
+  const thumbUrl = `https://img.youtube.com/vi/${escapeHTML(session.videoId)}/mqdefault.jpg`;
 
   li.innerHTML = `
     <img class="session-thumb" src="${thumbUrl}" alt="Thumbnail" loading="lazy" onerror="this.src='icons/icon.png'">
     <div class="session-item-body">
       <div class="session-info">
         <div class="session-id">
-          <span class="video-title-display" data-video-id="${session.videoId}">${displayName}</span>
+          <span class="video-title-display" data-video-id="${escapeHTML(session.videoId)}">${escapeHTML(displayName)}</span>
           ${badgeHtml}
         </div>
         <div class="session-meta">
@@ -386,15 +396,15 @@ async function loadChannels() {
       li.innerHTML = `
         <div class="session-info">
           <div class="session-id">
-            <i class="fab fa-youtube" style="color:#ff0000;"></i> ${ch.name}
-            <span class="badge cloud" title="Channel ID" style="font-size:0.7rem;">${ch.id.substring(0, 10)}...</span>
+            <i class="fab fa-youtube" style="color:#ff0000;"></i> ${escapeHTML(ch.name)}
+            <span class="badge cloud" title="Channel ID" style="font-size:0.7rem;">${escapeHTML(ch.id).substring(0, 10)}...</span>
           </div>
           <div class="session-meta">
             <span><i class="fas fa-satellite-dish"></i> 10分間隔で自動巡回中</span>
           </div>
         </div>
         <div class="session-action">
-          <button class="btn-danger" onclick="removeChannel('${ch.id}')" style="font-size:0.8rem; padding:6px 10px;">
+          <button class="btn-danger" onclick="removeChannel('${escapeHTML(ch.id)}')" style="font-size:0.8rem; padding:6px 10px;">
             <i class="fas fa-trash"></i> 削除
           </button>
         </div>
