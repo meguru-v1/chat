@@ -345,7 +345,9 @@ async function start() {
     console.log(`📺 対象動画: ${videoTitle}`);
 
     if (process.env.GITHUB_ENV) {
-      fs.appendFileSync(process.env.GITHUB_ENV, `VIDEO_TITLE<<EOF\n${videoTitle}\nEOF\n`);
+      // ランダムなデリミタを生成して、タイトルにEOF互換文字が含まれるインジェクションを防ぐ
+      const delimiter = `EOF_${Math.random().toString(36).substring(2, 15)}`;
+      fs.appendFileSync(process.env.GITHUB_ENV, `VIDEO_TITLE<<${delimiter}\n${videoTitle}\n${delimiter}\n`);
     }
 
     resetIdleTimer();
