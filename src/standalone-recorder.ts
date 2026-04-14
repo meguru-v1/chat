@@ -95,9 +95,12 @@ async function finish(reason: string) {
         fs.mkdirSync(path.dirname(fullPdfPath), { recursive: true });
       }
       console.log(`📄 PDF生成中 (${messages.length}件)...`);
+      
+      // ✅ 強制終了（SIGKILL）対策: 先に sessions.json へ同期的(Sync)に完了記録を書き込んでしまう
+      updateHistory(videoId, messages.length, pdfPath, videoTitle, 'completed');
+      
       const pdfBuffer = await generatePdf(videoId, messages, videoTitle);
       fs.writeFileSync(fullPdfPath, pdfBuffer);
-      updateHistory(videoId, messages.length, pdfPath, videoTitle, 'completed');
       console.log(`✅ レポート生成成功: ${pdfPath}`);
     } catch (err) {
       console.error('❌ PDF生成失敗:', err);
