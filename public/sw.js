@@ -1,4 +1,4 @@
-const CACHE_NAME = 'smart-archiver-cache-v3.1';
+const CACHE_NAME = 'smart-archiver-cache-v3.3';
 const urlsToCache = [
   './',
   './index.html',

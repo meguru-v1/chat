@@ -8,6 +8,9 @@ on:
 jobs:
   check-and-trigger:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read    # リポジトリの読み取りのみ
+      actions: write    # 録画ワークフローのトリガーに必要
     steps:
       - uses: actions/checkout@v4
 

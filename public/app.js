@@ -351,6 +351,11 @@ async function startRecording(e) {
 }
 
 async function stopActionsRun(runId) {
+  // runId のバリデーション（数値のみ許可）
+  if (!runId || !/^\d+$/.test(String(runId))) {
+    showToast('無効なタスクIDです', 'error');
+    return;
+  }
   if (!confirm(`録画中のタスク(ID: ${runId})を停止しますか？`)) return;
   
   if (!GAS_PROXY_URL.startsWith('http')) {
@@ -470,6 +475,11 @@ async function addChannel(e) {
 }
 
 async function removeChannel(channelId) {
+  // channelId のバリデーション
+  if (!channelId || typeof channelId !== 'string') {
+    showToast('無効なチャンネルIDです', 'error');
+    return;
+  }
   if (!confirm('このチャンネルを監視リストから削除しますか？')) return;
 
   try {

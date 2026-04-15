@@ -25,7 +25,13 @@ function doPost(e) {
     return createResponse({ status: 'error', message: 'GAS 側の設定(Token/Repo)が未完了です。' });
   }
 
-  var payload = JSON.parse(e.postData.contents);
+  // ✅ バグ修正: JSONパース失敗時にクラッシュしないよう try-catch で保護
+  var payload;
+  try {
+    payload = JSON.parse(e.postData.contents);
+  } catch (err) {
+    return createResponse({ status: 'error', message: 'リクエストのフォーマットが不正です。' });
+  }
   var action = payload.action || 'record';
 
   // ---------------------
@@ -128,13 +134,14 @@ function handleChannelUpdate(payload, ghToken, ghRepo) {
         var ytApiKey = PropertiesService.getScriptProperties().getProperty('YOUTUBE_API_KEY');
         if (ytApiKey && channelIdentifier.startsWith('@')) {
           var handle = channelIdentifier.replace('@', '');
-          var searchUrl = 'https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=' + encodeURIComponent(handle) + '&key=' + ytApiKey + '&maxResults=1';
-          var searchRes = UrlFetchApp.fetch(searchUrl, { muteHttpExceptions: true });
+          // ✅ バグ修正: search API(10クレジット)ではなく channels?forHandle(0クレジット)で解決
+          var resolveUrl = 'https://www.googleapis.com/youtube/v3/channels?part=snippet&forHandle=' + encodeURIComponent(handle) + '&key=' + ytApiKey;
+          var searchRes = UrlFetchApp.fetch(resolveUrl, { muteHttpExceptions: true });
           if (searchRes.getResponseCode() === 200) {
             var searchData = JSON.parse(searchRes.getContentText());
             if (searchData.items && searchData.items.length > 0) {
-              channelId = searchData.items[0].snippet.channelId;
-              channelName = searchData.items[0].snippet.channelTitle;
+              channelId = searchData.items[0].id;
+              channelName = searchData.items[0].snippet.title;
             }
           }
         }

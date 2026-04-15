@@ -96,14 +96,15 @@ async function finish(reason: string) {
       }
       console.log(`📄 PDF生成中 (${messages.length}件)...`);
       
-      // ✅ 強制終了（SIGKILL）対策: 先に sessions.json へ同期的(Sync)に完了記録を書き込んでしまう
+      // ✅ SIGKILL対策: PDF生成前に先に履歴を書き込む（成功ステータスで仮登録）
       updateHistory(videoId, messages.length, pdfPath, videoTitle, 'completed');
-      
+
       const pdfBuffer = await generatePdf(videoId, messages, videoTitle);
       fs.writeFileSync(fullPdfPath, pdfBuffer);
       console.log(`✅ レポート生成成功: ${pdfPath}`);
     } catch (err) {
       console.error('❌ PDF生成失敗:', err);
+      // PDFが作れなかった場合、仮登録した成功エントリをエラーで上書き修正する
       updateHistory(videoId, messages.length, '', videoTitle, 'error', 'pdf_generation_failed');
     }
   } else {
@@ -135,11 +136,23 @@ function updateHistory(
   let h: any[] = [];
   try {
     h = fs.existsSync(hPath) ? JSON.parse(fs.readFileSync(hPath, 'utf8')) : [];
-  } catch {
+  } catch (e: any) {
+    console.warn('⚠️ sessions.json の読み込みに失敗。新規作成します:', e.message);
     h = [];
   }
 
   const normalizedPath = p ? p.replace(/^\/public\//, '').replace(/^public\//, '') : '';
+
+  // ✅ パストラバーサル防止: パスが reports/ ディレクトリ内に収まるか確認
+  if (normalizedPath) {
+    const resolved = path.resolve(__dirname, '..', 'public', normalizedPath);
+    const reportsDir = path.resolve(__dirname, '..', 'public', 'reports');
+    if (!resolved.startsWith(reportsDir)) {
+      console.error(`❌ 不正なpdfPath detected: "${normalizedPath}" — 履歴への書き込みを中止`);
+      return;
+    }
+  }
+
   const newEntry: any = {
     videoId: vId,
     title,

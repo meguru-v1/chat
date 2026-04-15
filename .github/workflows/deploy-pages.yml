@@ -30,13 +30,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🔍 デバッグ：公開ファイルを確認
-        run: |
-          echo "📁 Public フォルダの構造:"
-          ls -R public
-          echo "📝 index.html のバージョン確認:"
-          grep "v2.5" public/index.html && echo "✅ v2.5 確認OK" || echo "❌ バージョンスタンプが見つかりません"
-
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
