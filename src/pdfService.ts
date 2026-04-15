@@ -156,12 +156,13 @@ function computeStats(messages: IChatMessage[]): SessionStats {
     }
   }
 
-  const peakMinute = minuteStats.reduce(
-    (max, cur) => (cur.count > max.count ? cur : max),
-    minuteStats[0]
-  );
+  // ✅ バグ修正: minuteStats が空の場合 reduce が undefined を返すクラッシュを暲止
+  const peakMinute: MinuteStats = minuteStats.length > 0
+    ? minuteStats.reduce((max, cur) => (cur.count > max.count ? cur : max), minuteStats[0])
+    : { time: '--:--', count: 0 };
   
-  const avgPerMinute = Math.round(messages.length / totalMinutes);
+  // ✅ バグ修正: totalMinutes が 0 の場合、avgPerMinute が Infinity になる
+  const avgPerMinute = totalMinutes > 0 ? Math.round(messages.length / totalMinutes) : 0;
 
   const topAuthors: AuthorStats[] = Array.from(authorCounts.entries())
     .map(([name, count]) => ({ name, count }))
@@ -373,8 +374,10 @@ export async function generatePdf(
 
       stats.topAuthors.forEach((author, i) => {
         const medal = i === 0 ? '[1]' : i === 1 ? '[2]' : i === 2 ? '[3]' : ` ${i + 1}.`;
-        const barLen = Math.round((author.count / stats.topAuthors[0].count) * 20);
-        const bar = '█'.repeat(barLen);
+        // ✅ バグ修正: topAuthors[0].count が 0 の時のゼロ除算を防止
+        const maxCount = stats.topAuthors[0].count || 1;
+        const barLen = Math.round((author.count / maxCount) * 20);
+        const bar = '█'.repeat(Math.max(0, barLen));
         doc.text(`${medal} ${author.name.padEnd(20)} ${bar} ${author.count}件`);
       });
       doc.moveDown(1);

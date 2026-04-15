@@ -142,7 +142,7 @@ function createSessionElement(session, displayState) {
     metaHtml = `
       <span><i class="fab fa-youtube"></i> ${escapeHTML(session.videoId)}</span>
       <span><i class="far fa-calendar-alt"></i> ${formatDate(session.date)}</span>
-      <span style="color:#ef4444;"><i class="fas fa-exclamation-triangle"></i> ${session.messageCount}件取得</span>
+      <span style="color:#ef4444;"><i class="fas fa-exclamation-triangle"></i> ${Number(session.messageCount).toLocaleString()}件取得</span>
       ${reasonHtml}
     `;
     actionHtml = '';
@@ -151,15 +151,20 @@ function createSessionElement(session, displayState) {
     metaHtml = `
       <span><i class="fab fa-youtube"></i> ${escapeHTML(session.videoId)}</span>
       <span><i class="far fa-calendar-alt"></i> ${formatDate(session.date)}</span>
-      <span><i class="far fa-comments"></i> ${session.messageCount}件</span>
+      <span><i class="far fa-comments"></i> ${Number(session.messageCount).toLocaleString()}件</span>
     `;
+    // ✅ バグ修正: pdfPath が空/undefinedの場合 split で TypeError になる
     const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
-    const pdfUrl = `${baseUrl}/${session.pdfPath.split('/').map(encodeURIComponent).join('/')}`;
-    actionHtml = `
-      <a href="${pdfUrl}" target="_blank" class="btn-primary" style="text-decoration:none; display:inline-block; padding:8px 12px; border-radius:6px; font-size:13px">
-        <i class="fas fa-file-pdf"></i> レポート表示
-      </a>
-    `;
+    const safePdfPath = session.pdfPath || '';
+    const pdfUrl = safePdfPath
+      ? `${baseUrl}/${safePdfPath.split('/').map(encodeURIComponent).join('/')}`
+      : '#';
+    actionHtml = pdfUrl !== '#'
+      ? `
+        <a href="${pdfUrl}" target="_blank" class="btn-primary" style="text-decoration:none; display:inline-block; padding:8px 12px; border-radius:6px; font-size:13px">
+          <i class="fas fa-file-pdf"></i> レポート表示
+        </a>`
+      : '<span style="color:var(--muted); font-size:0.8rem;">PDFなし</span>';
   }
 
   let displayName = session.title || session.videoId;
@@ -232,7 +237,13 @@ async function loadStatus() {
     const resSessions = await fetch('sessions.json?t=' + Date.now());
     let savedSessions = [];
     if (resSessions.ok) {
-      savedSessions = await resSessions.json();
+      try {
+        savedSessions = await resSessions.json();
+        if (!Array.isArray(savedSessions)) savedSessions = [];
+      } catch (e) {
+        console.warn('sessions.json のパースに失敗しました:', e);
+        savedSessions = [];
+      }
     }
 
     activeList.innerHTML = '';
@@ -301,8 +312,17 @@ async function loadStatus() {
 
     // UIの描画完了後に、ID表示のままになっている録画の動画タイトルを非同期取得する
     resolveTitles();
+
+    // ✅ sessions.json のパース保護: 開くことはできたが中身が壊れた欲しないJSONの場合
   } catch (err) {
     console.error('Failed to load status:', err);
+    // エラー時に画面が「読み込み中...」のまま固まるバグを修正
+    if (activeList.innerHTML.includes('読み込み中')) {
+      activeList.innerHTML = '<li class="empty-msg">状態の取得に失敗しました。後ほど再読み込みします。</li>';
+    }
+    if (historyList.innerHTML.includes('読み込み中')) {
+      historyList.innerHTML = '<li class="empty-msg">履歴の取得に失敗しました。</li>';
+    }
   }
 }
 
