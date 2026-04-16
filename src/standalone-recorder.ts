@@ -114,9 +114,11 @@ async function finish(reason: string) {
 
   if (process.env.GITHUB_ENV) {
     const durationMins = Math.floor((Date.now() - startTime) / 60000);
+    // ✅ バグ修正: RECORD_REASON に改行が含まれる場合、GITHUB_ENV に初行の変数が汚染されるリスクがある
+    const safeReason = reason.replace(/[\r\n]/g, '_');
     fs.appendFileSync(process.env.GITHUB_ENV, `RECORD_MSG_COUNT=${messages.length}\n`);
     fs.appendFileSync(process.env.GITHUB_ENV, `RECORD_DURATION_MINS=${durationMins}\n`);
-    fs.appendFileSync(process.env.GITHUB_ENV, `RECORD_REASON=${reason}\n`);
+    fs.appendFileSync(process.env.GITHUB_ENV, `RECORD_REASON=${safeReason}\n`);
   }
 
   // シグナルハンドラから呼ばれた場合は非同期で終了できないので同期的に終了

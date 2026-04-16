@@ -116,6 +116,8 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
           VIDEO_ID: ${{ github.event.inputs.video_id || github.event.client_payload.video_id }}
+          # ✅ バグ修正: VIDEO_TITLE が env: 宣言なしで $VIDEO_TITLE を使っていたため常に空になっていた
+          VIDEO_TITLE: ${{ github.event.client_payload.video_title }}
           REPO_NAME: ${{ github.repository }}
           RECORD_MSG_COUNT: ${{ env.RECORD_MSG_COUNT }}
           RECORD_DURATION: ${{ env.RECORD_DURATION_MINS }}

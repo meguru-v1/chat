@@ -5,9 +5,18 @@
 # ============================================================
 set -euo pipefail
 
-# .env 読み込み
+# .env 読み込み（安全なパース: スペース・引用符を含む値も正しく処理）
 if [ -f .env ]; then
-  export $(grep -v '^#' .env | xargs)
+  while IFS='=' read -r key value; do
+    # コメント行と空行をスキップ
+    [[ "$key" =~ ^#.*$ || -z "$key" ]] && continue
+    # 値の前後のクォートを除去してエクスポート
+    value="${value%\"}"
+    value="${value#\"}"
+    value="${value%\'}"
+    value="${value#\'}"
+    export "$key=$value"
+  done < .env
 fi
 
 if [ -z "${GITHUB_TOKEN:-}" ] || [ -z "${GITHUB_REPO:-}" ]; then

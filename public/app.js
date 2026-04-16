@@ -85,17 +85,21 @@ async function resolveTitles() {
   const elements = document.querySelectorAll('.video-title-display');
   for (const el of elements) {
     const videoId = el.getAttribute('data-video-id');
+    // ✅ バグ修正: videoId が null / 空の場合、そのまま fetch を呼ぶと "null" を含むURLが生成される
+    if (!videoId) continue;
     const currentText = el.textContent.trim();
     
     // 表示名がIDのまま（タイトルが未取得）の場合のみ実行
-    if (currentText === videoId && videoId) {
+    if (currentText === videoId) {
       if (titleCache[videoId]) {
         el.textContent = titleCache[videoId];
       } else {
         try {
-          const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`);
+          const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
+          if (!res.ok) continue;
           const data = await res.json();
-          if (data && data.title) {
+          // ✅ バグ修正: title が空文字または null の場合は書き換えない
+          if (data && data.title && data.title.trim()) {
             titleCache[videoId] = data.title;
             el.textContent = data.title;
           }
